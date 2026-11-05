@@ -80,7 +80,10 @@ async function boot() {
   }
   state.store.onWriteError = (e) => {
     console.error(e);
-    toast('保存に失敗しました。通信状況を確認してください');
+    const code = errorCode(e);
+    toast(code === 'permission-denied'
+      ? '保存できませんでした（権限エラー：permission-denied）'
+      : `保存に失敗しました（${code}）`, { duration: 7000 });
   };
   state.store.onAuth((user) => (user ? startSession(user) : showLogin()));
 }
@@ -112,17 +115,27 @@ function showLogin() {
   $('#login').hidden = false;
 }
 
+function errorCode(e) {
+  return String(e?.code ?? e?.name ?? 'unknown').replace(/^firestore\//, '');
+}
+
 function startSession(user) {
   state.unsub?.();
   state.user = user;
   state.loaded = false;
+  state.loadError = null;
   $('#boot').hidden = true;
   $('#login').hidden = true;
   $('#app').hidden = false;
   render();
   state.unsub = state.store.subscribe(onData, (e) => {
     console.error(e);
-    toast('データを読み込めませんでした');
+    if (state.loaded) {
+      toast(`データを読み込めませんでした（${errorCode(e)}）`, { duration: 7000 });
+      return;
+    }
+    state.loadError = errorCode(e);
+    render();
   });
 }
 
@@ -148,7 +161,8 @@ let holdTimer = 0;
 
 function render() {
   if (!state.loaded) {
-    renderSkeleton();
+    if (state.loadError) renderLoadError();
+    else renderSkeleton();
     return;
   }
   let list = applyView(state.songs, state.view, state.query);
@@ -184,6 +198,17 @@ function renderSkeleton() {
   ul.replaceChildren(...Array.from({ length: 8 }, () => h('<li class="song skeleton" aria-hidden="true"><span class="sk sk-main"></span><span class="sk sk-range"></span><span class="sk sk-key"></span></li>')));
   $('#empty').hidden = true;
   $('#count').textContent = '';
+}
+
+function renderLoadError() {
+  $('#list').replaceChildren();
+  $('#count').textContent = '';
+  const el = $('#empty');
+  el.hidden = false;
+  el.innerHTML = `<div class="empty-icon">${icon('close')}</div>
+    <p class="empty-title">データを読み込めませんでした</p>
+    <p class="empty-text">エラー：${esc(state.loadError)}${state.loadError === 'permission-denied' ? '<br>データベースのアクセス権限の設定を確認してください。' : '<br>通信状況を確認して、再読み込みしてください。'}</p>
+    <div class="empty-actions"><button type="button" class="btn primary" data-act="reload">${icon('refresh')}再読み込み</button></div>`;
 }
 
 function createItem(id) {
@@ -420,6 +445,7 @@ function bindStatic() {
   $('#empty').addEventListener('click', (e) => {
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'add') openForm();
+    else if (a === 'reload') location.reload();
     else if (a === 'import') $('#csv-file').click();
     else if (a === 'clear') {
       $('#q').value = '';
