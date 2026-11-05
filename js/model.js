@@ -2,7 +2,7 @@
 import { RANGE_FIELDS, isNote } from './notes.js';
 import { normalize, searchTerms, collator } from './text.js';
 
-export const PRESET_TAGS = ['十八番', '練習中'];
+export const PRESET_TAGS = ['練習中'];
 
 export const SORTS = [
   { id: 'createdAt', label: '登録日', dir: 'desc' },
