@@ -1257,7 +1257,7 @@ function exportCSV() {
     return;
   }
   const list = [...state.songs].sort((a, b) => collator.compare(a.artist, b.artist) || collator.compare(a.title, b.title));
-  const blob = new Blob(['﻿', songsToCSV(list)], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['\uFEFF', songsToCSV(list)], { type: 'text/csv;charset=utf-8' });
   const d = new Date();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);

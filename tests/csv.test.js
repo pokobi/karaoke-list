@@ -7,10 +7,10 @@ import { songsToCSV, parseCSV, rowsToSongs } from '../js/csv.js';
 test('書き出した CSV を読み込むと同じ内容に戻る', () => {
   const src = [normalizeSong({
     id: 'x', artist: 'A, "B"', title: '改行\nあり', low: n('lowG#'), chestHigh: n('hiA'), falsettoHigh: null, key: -12,
-    favorite: true, tags: ['十八番', '練習中'], score: 92.345, memo: 'メモ', singCount: 3,
+    favorite: true, tags: ['バラード', '練習中'], score: 92.345, memo: 'メモ', singCount: 3,
     lastSungAt: new Date(2026, 10, 6, 21, 30).getTime(), createdAt: new Date(2026, 0, 2, 3, 4).getTime(),
   })];
-  const { songs, errors } = rowsToSongs(parseCSV('﻿' + songsToCSV(src)));
+  const { songs, errors } = rowsToSongs(parseCSV('\uFEFF' + songsToCSV(src)));
   assert.deepEqual(errors, []);
   assert.equal(songs.length, 1);
   const s = songs[0];

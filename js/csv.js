@@ -58,7 +58,7 @@ export function songsToCSV(songs) {
 }
 
 export function parseCSV(text) {
-  const src = String(text ?? '').replace(/^﻿/, '');
+  const src = String(text ?? '').replace(/^\uFEFF/, '');
   const rows = [];
   let row = [];
   let field = '';
