@@ -1,11 +1,13 @@
 import { FIREBASE_CONFIG } from './config.js';
 import { RANGE_FIELDS, KEY_MIN, KEY_MAX, OCTAVE_DOWN, isNote, noteName, formatKey, keyTone, clampKey, recommendKey } from './notes.js';
-import { collator } from './text.js';
+import { collator, normalize } from './text.js';
 import {
   SORTS, emptySong, normalizeSong, toPayload, dupKey, sanitizeView, defaultView, applyView, hasRangeFilter,
   artistCounts, allTags, suggestArtists,
 } from './model.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
+import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, findTrack, waitForSlot } from './itunes.js';
+import { readHistoryFile, aggregate, thumbnailUrl } from './history.js';
 import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, openPopover, closePopover, popoverAnchor, pickNote } from './ui.js';
 import { createLocalStore } from './store-local.js';
 
@@ -31,6 +33,7 @@ const state = {
   settings: null,
   artistsSheet: null,
   filterSheet: null,
+  historySheet: null,
 };
 
 function loadView() {
@@ -213,6 +216,7 @@ function renderLoadError() {
 
 function createItem(id) {
   const el = h(`<li class="song" data-id="${esc(id)}">
+    <span class="art" aria-hidden="true">${icon('music')}<img alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" hidden></span>
     <button type="button" class="song-main">
       <span class="song-title">${icon('star-fill', 'fav')}<span class="t"></span></span>
       <span class="song-sub"><span class="a"></span><span class="tags"></span></span>
@@ -226,8 +230,13 @@ function createItem(id) {
       <button type="button" class="kb k-up" aria-label="キーを1上げる">${icon('plus')}</button>
     </div>
   </li>`);
+  const art = $('.art img', el);
+  // 読み込み中は透明にしておく（非表示にすると遅延読み込みが始まらないため）
+  art.addEventListener('error', () => { art.hidden = true; });
+  art.addEventListener('load', () => art.classList.add('ok'));
   return {
     el,
+    art,
     t: $('.t', el),
     a: $('.a', el),
     tags: $('.tags', el),
@@ -241,9 +250,19 @@ function createItem(id) {
 }
 
 function updateItem(it, s) {
-  const sig = [s.title, s.artist, s.favorite, s.tags.join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key].join('\u0001');
+  const sig = [s.title, s.artist, s.favorite, s.tags.join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.artwork].join('\u0001');
   if (sig === it.sig) return;
   it.sig = sig;
+  if (s.artwork) {
+    if (it.art.getAttribute('src') !== s.artwork) {
+      it.art.classList.remove('ok');
+      it.art.hidden = false;
+      it.art.src = s.artwork;
+    }
+  } else {
+    it.art.hidden = true;
+    it.art.removeAttribute('src');
+  }
   it.t.textContent = s.title;
   it.a.textContent = s.artist;
   it.fav.style.display = s.favorite ? '' : 'none';
@@ -268,15 +287,20 @@ function updateItem(it, s) {
 
 function renderList(list) {
   const ul = $('#list');
+  ul.classList.toggle('no-art', !state.view.showArt);
   $$('.skeleton', ul).forEach((el) => el.remove());
   const seen = new Set();
   let prev = null;
+  let index = 0;
   for (const s of list) {
     let it = items.get(s.id);
     if (!it) {
       it = createItem(s.id);
       items.set(s.id, it);
     }
+    // 最初に見える範囲の画像はすぐ読み込み、それより下は画面に近づいてから読み込む
+    const loading = index++ < 16 ? 'eager' : 'lazy';
+    if (it.art.loading !== loading) it.art.loading = loading;
     updateItem(it, s);
     seen.add(s.id);
     const expected = prev ? prev.nextSibling : ul.firstChild;
@@ -292,7 +316,7 @@ function renderList(list) {
 
 function filterCount() {
   const v = state.view;
-  return (v.favoriteOnly ? 1 : 0) + (v.artist ? 1 : 0) + v.tags.length
+  return (v.favoriteOnly ? 1 : 0) + (v.missingRange ? 1 : 0) + (v.artist ? 1 : 0) + v.tags.length
     + RANGE_FIELDS.filter((f) => isNote(v.range[f.id]?.min) || isNote(v.range[f.id]?.max)).length;
 }
 
@@ -315,6 +339,7 @@ function renderChips() {
   const v = state.view;
   const chips = [];
   if (v.favoriteOnly) chips.push({ k: 'fav', label: `${icon('star-fill', 'chip-star')}お気に入り` });
+  if (v.missingRange) chips.push({ k: 'missing', label: '音域未入力' });
   if (v.artist) chips.push({ k: 'artist', label: esc(v.artist) });
   for (const t of v.tags) chips.push({ k: `tag:${t}`, label: `${icon('tag')}${esc(t)}` });
   for (const f of RANGE_FIELDS) {
@@ -341,6 +366,7 @@ function renderFilterPanel() {
   fpSig = sig;
   const v = state.view;
   $('#f-fav').checked = v.favoriteOnly;
+  $('#f-missing').checked = v.missingRange;
   const names = [...counts.keys()].sort(collator.compare);
   if (v.artist && !counts.has(v.artist)) names.unshift(v.artist);
   $('#f-artist').innerHTML = `<option value="">すべてのアーティスト</option>`
@@ -387,7 +413,7 @@ function updateView(patch) {
 
 function clearFilters() {
   const d = defaultView();
-  updateView({ favoriteOnly: false, artist: '', tags: [], range: d.range });
+  updateView({ favoriteOnly: false, missingRange: false, artist: '', tags: [], range: d.range });
 }
 
 // ---- 固定の要素のイベント ---------------------------------------------
@@ -429,7 +455,7 @@ function bindStatic() {
     if (e.target.closest('.k-up')) setKey(id, s.key + 1);
     else if (e.target.closest('.k-down')) setKey(id, s.key - 1);
     else if (e.target.closest('.kv')) openKeyMenu(id, e.target.closest('.kv'));
-    else if (e.target.closest('.song-main')) openDetail(id);
+    else if (e.target.closest('.song-main, .art')) openDetail(id);
   });
 
   $('#chips').addEventListener('click', (e) => {
@@ -437,6 +463,7 @@ function bindStatic() {
     if (!k) return;
     if (k === 'all') clearFilters();
     else if (k === 'fav') updateView({ favoriteOnly: false });
+    else if (k === 'missing') updateView({ missingRange: false });
     else if (k === 'artist') updateView({ artist: '' });
     else if (k.startsWith('tag:')) updateView({ tags: state.view.tags.filter((t) => t !== k.slice(4)) });
     else if (k.startsWith('range:')) updateView({ range: { ...state.view.range, [k.slice(6)]: {} } });
@@ -458,6 +485,7 @@ function bindStatic() {
   const fp = $('#filter-panel');
   fp.addEventListener('change', (e) => {
     if (e.target.id === 'f-fav') updateView({ favoriteOnly: e.target.checked });
+    else if (e.target.id === 'f-missing') updateView({ missingRange: e.target.checked });
     else if (e.target.id === 'f-artist') updateView({ artist: e.target.value });
   });
   fp.addEventListener('click', async (e) => {
@@ -495,6 +523,12 @@ function bindStatic() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (file) importCSV(file);
+  });
+
+  $('#history-file').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) importHistory(file);
   });
 
   wide.addEventListener('change', () => {
@@ -649,7 +683,7 @@ function paintDetail() {
     return;
   }
   const root = $('.detail', d.sheet.el);
-  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, d.random, voice()]);
+  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, d.random, voice()]);
   if (sig !== d.sig) {
     d.sig = sig;
     root.innerHTML = detailHTML(s, d);
@@ -686,6 +720,7 @@ function detailHTML(s, d) {
   return `
     ${d.random ? `<div class="rand-bar">${icon('dice')}<span>ランダム選曲</span><button type="button" class="btn sm" data-act="reroll">${icon('refresh')}もう一度</button></div>` : ''}
     <div class="sheet-head d-head">
+      ${s.artwork ? `<img class="d-art" src="${esc(s.artwork)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
       <div class="d-titles">
         <h3 class="d-title">${esc(s.title)}</h3>
         <button type="button" class="d-artist" data-act="artist" title="このアーティストで絞り込む">${esc(s.artist)}${icon('chevron-right')}</button>
@@ -819,9 +854,20 @@ function formHTML(isNew, openMore) {
           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fm-artist-list">
         <ul class="ac-list" id="fm-artist-list" role="listbox" hidden></ul>
       </div>
-      <div class="field">
+      <div class="field ac">
         <label class="label" for="fm-title">曲名</label>
-        <input class="input" id="fm-title" name="title" maxlength="150" autocomplete="off" enterkeyhint="done">
+        <input class="input" id="fm-title" name="title" maxlength="150" autocomplete="off" enterkeyhint="done"
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fm-title-list">
+        <ul class="ac-list song-ac" id="fm-title-list" role="listbox" hidden></ul>
+      </div>
+      <div class="field">
+        <span class="label">ジャケット画像</span>
+        <div class="art-edit">
+          <span class="art-prev" data-role="art-prev">${icon('music')}<img alt="" referrerpolicy="no-referrer" hidden></span>
+          <button type="button" class="pill" data-act="art-find">${icon('search')}画像を探す</button>
+          <button type="button" class="pill" data-act="art-clear" hidden>${icon('close')}外す</button>
+        </div>
+        <p class="hint">曲名を候補から選ぶと自動で入ります。未設定のまま登録すると、あとから自動で探します。</p>
       </div>
       <div class="field">
         <span class="label">音域</span>
@@ -901,6 +947,19 @@ function openForm(song = null) {
     paintRange();
     paintKey();
     paintTags();
+    paintArt();
+  };
+
+  const paintArt = () => {
+    const img = $('img', el('[data-role="art-prev"]'));
+    if (draft.artwork) {
+      img.src = draft.artwork;
+      img.hidden = false;
+    } else {
+      img.hidden = true;
+      img.removeAttribute('src');
+    }
+    el('[data-act="art-clear"]').hidden = !draft.artwork;
   };
 
   const paintRange = () => {
@@ -957,7 +1016,22 @@ function openForm(song = null) {
     }
   };
 
-  setupArtistSuggest(form.artist, el('.ac-list'), () => form.title.focus());
+  // アーティストが決まったら、その曲一覧を先に読み込んでおき、曲名の候補をすぐ出せるようにする
+  const prefetchSongs = () => {
+    const a = form.artist.value.trim();
+    if (a && navigator.onLine) songsOfArtist(a).catch(() => {});
+  };
+  form.artist.addEventListener('change', prefetchSongs);
+  setupArtistSuggest(form.artist, el('#fm-artist-list'), () => {
+    prefetchSongs();
+    form.title.focus();
+  });
+  setupTitleSuggest(form.title, el('#fm-title-list'), () => form.artist.value, (s) => {
+    if (s.artwork) {
+      draft.artwork = s.artwork;
+      paintArt();
+    }
+  });
 
   form.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.target.tagName === 'TEXTAREA' || e.isComposing) return;
@@ -1005,6 +1079,15 @@ function openForm(song = null) {
       case 'k-reset': draft.key = 0; paintKey(); break;
       case 'k-oct': draft.key = OCTAVE_DOWN; paintKey(); break;
       case 'tag-add': addTag(); break;
+      case 'art-find': {
+        const url = await openArtPicker(form.artist.value, form.title.value);
+        if (url !== undefined) {
+          draft.artwork = url;
+          paintArt();
+        }
+        break;
+      }
+      case 'art-clear': draft.artwork = null; paintArt(); break;
       case 'save-next': save(true); break;
       default:
     }
@@ -1068,12 +1151,14 @@ function openForm(song = null) {
       });
       if (!ok) return;
     }
+    let id = song?.id;
     if (isNew) {
       data.createdAt = now;
-      state.store.addSong(toPayload(data));
+      id = state.store.addSong(toPayload(data));
     } else {
       state.store.updateSong(song.id, toPayload(data));
     }
+    if (!data.artwork) autoArtwork(id, artist, title);
     if (!state.profile.artists.includes(artist)) state.store.addArtists([artist]);
     toast(isNew ? `登録しました：${title}` : '保存しました');
     if (next) {
@@ -1090,56 +1175,42 @@ function openForm(song = null) {
   if (isNew) setTimeout(() => form.artist.focus({ preventScroll: true }), 60);
 }
 
-function setupArtistSuggest(input, list, onPick) {
-  let names = [];
+// 入力欄の下に候補を出す共通部品（キーボードの上下・Enter・Esc に対応）
+function combobox(input, list, { idPrefix, onPick }) {
+  let items = [];
   let active = -1;
+  let renderFn = null;
   const hide = () => {
     list.hidden = true;
     active = -1;
     input.setAttribute('aria-expanded', 'false');
     input.removeAttribute('aria-activedescendant');
   };
-  const paint = () => {
-    if (document.activeElement !== input) return hide();
-    names = suggestArtists(state.profile.artists, state.songs, input.value);
-    if (!names.length) return hide();
-    const counts = artistCounts(state.songs);
-    const q = input.value.trim().toLowerCase();
-    list.innerHTML = names.map((n, i) => {
-      const at = q ? n.toLowerCase().indexOf(q) : -1;
-      const label = at >= 0 ? `${esc(n.slice(0, at))}<mark>${esc(n.slice(at, at + q.length))}</mark>${esc(n.slice(at + q.length))}` : esc(n);
-      const c = counts.get(n);
-      return `<li role="option" id="ac-opt-${i}" data-i="${i}" class="${i === active ? 'active' : ''}" aria-selected="${i === active}">
-        <span class="ac-name">${label}</span>${c ? `<span class="ac-count">${c}曲</span>` : ''}</li>`;
-    }).join('');
+  const show = (next, render) => {
+    items = next;
+    renderFn = render;
+    if (document.activeElement !== input || !items.length) return hide();
+    if (active >= items.length) active = -1;
+    list.innerHTML = render(items, active, idPrefix);
     list.hidden = false;
     input.setAttribute('aria-expanded', 'true');
-    if (active >= 0) input.setAttribute('aria-activedescendant', `ac-opt-${active}`);
+    if (active >= 0) input.setAttribute('aria-activedescendant', `${idPrefix}-${active}`);
+    else input.removeAttribute('aria-activedescendant');
   };
-  const pick = (n) => {
-    input.value = n;
+  const choose = (it) => {
     hide();
-    onPick?.(n);
+    onPick(it);
   };
-  input.addEventListener('focus', paint);
-  input.addEventListener('input', () => {
-    active = -1;
-    paint();
-  });
   input.addEventListener('blur', () => setTimeout(hide, 120));
   input.addEventListener('keydown', (e) => {
-    if (list.hidden || e.isComposing) return;
-    if (e.key === 'ArrowDown') {
-      active = (active + 1) % names.length;
-      paint();
-      e.preventDefault();
-    } else if (e.key === 'ArrowUp') {
-      active = (active - 1 + names.length) % names.length;
-      paint();
+    if (list.hidden || e.isComposing || !items.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      active = e.key === 'ArrowDown' ? (active + 1) % items.length : (active - 1 + items.length) % items.length;
+      show(items, renderFn);
       e.preventDefault();
     } else if (e.key === 'Enter' && active >= 0) {
       e.preventDefault();
-      pick(names[active]);
+      choose(items[active]);
     } else if (e.key === 'Escape') {
       e.stopPropagation();
       hide();
@@ -1148,8 +1219,362 @@ function setupArtistSuggest(input, list, onPick) {
   list.addEventListener('pointerdown', (e) => e.preventDefault());
   list.addEventListener('click', (e) => {
     const li = e.target.closest('[data-i]');
-    if (li) pick(names[+li.dataset.i]);
+    if (li) choose(items[+li.dataset.i]);
   });
+  // 選べない一行メッセージ（読み込み中など）を出す
+  const message = (text) => {
+    if (document.activeElement !== input) return hide();
+    items = [];
+    list.innerHTML = `<li class="ac-head" role="presentation">${esc(text)}</li>`;
+    list.hidden = false;
+  };
+  return { show, hide, message, reset: () => { active = -1; } };
+}
+
+const highlight = (name, query) => {
+  const q = query.trim().toLowerCase();
+  const at = q ? name.toLowerCase().indexOf(q) : -1;
+  return at >= 0 ? `${esc(name.slice(0, at))}<mark>${esc(name.slice(at, at + q.length))}</mark>${esc(name.slice(at + q.length))}` : esc(name);
+};
+
+// アーティスト名：登録済みの名前を先に、その下に iTunes の候補を出す
+function setupArtistSuggest(input, list, onPick) {
+  let online = { q: '', names: [] };
+  let timer = 0;
+  let ctrl = null;
+  const cb = combobox(input, list, {
+    idPrefix: 'ac-artist',
+    onPick: (it) => {
+      input.value = it.name;
+      onPick?.(it.name);
+    },
+  });
+  const render = (items, active, pre) => {
+    const counts = artistCounts(state.songs);
+    let head = false;
+    return items.map((it, i) => {
+      const sep = it.online && !head ? ((head = true), '<li class="ac-head" role="presentation">iTunes の候補</li>') : '';
+      const c = counts.get(it.name);
+      return `${sep}<li role="option" id="${pre}-${i}" data-i="${i}" class="${i === active ? 'active' : ''}" aria-selected="${i === active}">
+        <span class="ac-name">${highlight(it.name, input.value)}</span>${c ? `<span class="ac-count">${c}曲</span>` : ''}</li>`;
+    }).join('');
+  };
+  const paint = () => {
+    const value = input.value.trim();
+    const local = suggestArtists(state.profile.artists, state.songs, input.value);
+    const known = new Set([...local, ...state.profile.artists].map((n) => normalize(n)));
+    const extra = online.q === value
+      ? online.names.filter((n) => !known.has(normalize(n)) && n !== value).slice(0, 6)
+      : [];
+    cb.show([...local.map((name) => ({ name })), ...extra.map((name) => ({ name, online: true }))], render);
+  };
+  const fetchOnline = () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2 || !navigator.onLine || online.q === q) return;
+    timer = setTimeout(async () => {
+      ctrl?.abort();
+      ctrl = new AbortController();
+      try {
+        const names = await suggestArtistsOnline(q, { signal: ctrl.signal });
+        online = { q, names };
+        if (input.value.trim() === q) paint();
+      } catch (e) {
+        if (e.name !== 'AbortError') console.warn('artist suggest', e);
+      }
+    }, 350);
+  };
+  input.addEventListener('focus', () => {
+    paint();
+    fetchOnline();
+  });
+  input.addEventListener('input', () => {
+    cb.reset();
+    paint();
+    fetchOnline();
+  });
+}
+
+// 曲名：入力済みのアーティストの曲を iTunes から出す（選ぶとジャケット画像も入る）
+function setupTitleSuggest(input, list, getArtist, onPick) {
+  let timer = 0;
+  let ctrl = null;
+  let loadedKey = '';
+  let songs = [];
+  const cb = combobox(input, list, {
+    idPrefix: 'ac-title',
+    onPick: (s) => {
+      input.value = s.title;
+      onPick?.(s);
+    },
+  });
+  const render = (items, active, pre) => {
+    const artist = getArtist().trim();
+    const registered = new Set(state.songs.map(dupKey));
+    return '<li class="ac-head" role="presentation">iTunes の候補</li>' + items.map((s, i) => {
+      const done = registered.has(dupKey({ artist, title: s.title }));
+      return `<li role="option" id="${pre}-${i}" data-i="${i}" class="song-opt${i === active ? ' active' : ''}" aria-selected="${i === active}">
+        <span class="ac-art">${s.artwork ? `<img src="${esc(s.artwork)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon('music')}</span>
+        <span class="ac-text"><span class="ac-name">${highlight(s.title, input.value)}</span>${s.album ? `<span class="ac-sub">${esc(s.album)}</span>` : ''}</span>
+        ${done ? '<span class="ac-count">登録済み</span>' : ''}</li>`;
+    }).join('');
+  };
+  const load = () => {
+    clearTimeout(timer);
+    const artist = getArtist().trim();
+    const q = input.value.trim();
+    if (!artist || !navigator.onLine) return cb.hide();
+    const key = `${artist}\u0001${q}`;
+    if (key === loadedKey) return cb.show(songs, render);
+    if (!songs.length) cb.message('iTunes で曲を探しています…');
+    timer = setTimeout(async () => {
+      ctrl?.abort();
+      ctrl = new AbortController();
+      try {
+        const found = await suggestSongsOnline(artist, q, { signal: ctrl.signal });
+        if (`${getArtist().trim()}\u0001${input.value.trim()}` !== key) return;
+        if (found.length) loadedKey = key;
+        songs = found.slice(0, 8);
+        cb.reset();
+        cb.show(songs, render);
+      } catch (e) {
+        if (e.name !== 'AbortError') console.warn('title suggest', e);
+      }
+    }, q ? 300 : 30);
+  };
+  input.addEventListener('focus', load);
+  input.addEventListener('input', () => {
+    cb.reset();
+    load();
+  });
+}
+
+// ---- ジャケット画像 ---------------------------------------------------
+
+// iTunes で画像を探して選ぶ。戻り値：選んだ画像の URL、キャンセルなら undefined
+function openArtPicker(artist, title) {
+  return new Promise((resolve) => {
+    let result;
+    const sheet = openSheet(`<div class="artpick">
+        <div class="sheet-head"><h3>ジャケット画像を選ぶ</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+        <div class="sheet-body">
+          <form class="search sm" data-role="form">${icon('search')}<input type="search" data-role="q" enterkeyhint="search" aria-label="検索する言葉" placeholder="アーティスト名と曲名"></form>
+          <div class="art-grid" data-role="grid"></div>
+        </div>
+      </div>`, { label: 'ジャケット画像を選ぶ', className: 'artpick-layer', onClose: () => resolve(result) });
+    const input = $('[data-role="q"]', sheet.el);
+    const grid = $('[data-role="grid"]', sheet.el);
+    let found = [];
+    input.value = `${artist} ${title}`.trim();
+    const run = async () => {
+      const q = input.value.trim();
+      if (!q) {
+        grid.innerHTML = '<p class="hint">アーティスト名と曲名を入れて検索してください。</p>';
+        return;
+      }
+      grid.innerHTML = '<p class="hint">検索しています…</p>';
+      try {
+        const songs = await searchTracks(q);
+        if (songs === null) {
+          grid.innerHTML = '<p class="hint">検索の回数が上限に近いため、1分ほど待ってからもう一度お試しください。</p>';
+          return;
+        }
+        found = songs;
+        grid.innerHTML = songs.length
+          ? songs.map((s, i) => `<button type="button" class="art-cand" data-i="${i}">
+              <img src="${esc(s.artwork)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+              <span class="art-cand-t">${esc(s.title)}</span><span class="art-cand-a">${esc(s.artist)}</span></button>`).join('')
+          : '<p class="hint">見つかりませんでした。検索する言葉を変えてみてください。</p>';
+      } catch (e) {
+        console.warn(e);
+        grid.innerHTML = '<p class="hint">検索できませんでした。通信状況を確認してください。</p>';
+      }
+    };
+    $('[data-role="form"]', sheet.el).addEventListener('submit', (e) => {
+      e.preventDefault();
+      input.blur();
+      run();
+    });
+    sheet.el.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.act === 'close') sheet.close();
+      if (b.dataset.i != null) {
+        result = found[+b.dataset.i]?.artwork ?? undefined;
+        sheet.close();
+      }
+    });
+    run();
+  });
+}
+
+// 画像が未設定の曲を登録したとき、裏で iTunes から探して入れる
+async function autoArtwork(id, artist, title) {
+  if (!id || !navigator.onLine) return;
+  try {
+    const r = await findTrack(artist, title);
+    const s = state.byId.get(id);
+    if (r?.match?.artwork && (!s || !s.artwork)) state.store.updateSong(id, { artwork: r.match.artwork });
+  } catch (e) {
+    console.warn('artwork', e);
+  }
+}
+
+// 画像が未設定の曲をまとめて探す（1分あたりの問い合わせ回数を守るため、1曲ずつ間をあける）
+const artJob = { running: false, cancel: false, done: 0, total: 0, found: 0 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function runArtJob() {
+  if (artJob.running) return;
+  const targets = state.songs.filter((s) => !s.artwork && s.title);
+  if (!targets.length) {
+    toast('ジャケット画像が未設定の曲はありません');
+    return;
+  }
+  Object.assign(artJob, { running: true, cancel: false, done: 0, total: targets.length, found: 0 });
+  paintArtJob();
+  for (const t of targets) {
+    if (artJob.cancel) break;
+    await waitForSlot();
+    try {
+      const r = await findTrack(t.artist, t.title);
+      const cur = state.byId.get(t.id);
+      if (r?.match?.artwork && cur && !cur.artwork) {
+        state.store.updateSong(t.id, { artwork: r.match.artwork });
+        artJob.found++;
+      }
+    } catch (e) {
+      console.warn('artwork', e);
+    }
+    artJob.done++;
+    paintArtJob();
+    if (artJob.done < artJob.total && !artJob.cancel) await sleep(3300);
+  }
+  artJob.running = false;
+  paintArtJob();
+  toast(`${artJob.done}曲を調べて、${artJob.found}曲に画像を設定しました`, { duration: 5000 });
+}
+
+function artJobHTML() {
+  if (artJob.running) {
+    const pct = artJob.total ? Math.round((artJob.done / artJob.total) * 100) : 0;
+    return `<div class="job">
+      <div class="job-bar"><span style="width:${pct}%"></span></div>
+      <div class="job-row"><span class="job-text">${artJob.done} / ${artJob.total} 曲を確認（${artJob.found}曲に設定）</span>
+      <button type="button" class="btn sm" data-act="art-cancel">中止</button></div>
+    </div>`;
+  }
+  const n = state.songs.filter((s) => !s.artwork).length;
+  return `<button type="button" class="btn wide" data-act="art-run"${n ? '' : ' disabled'}>${icon('image')}未設定の曲の画像をまとめて探す（${n}曲）</button>`;
+}
+
+function paintArtJob() {
+  const box = state.settings && $('[data-role="art-job"]', state.settings.el);
+  if (box) box.innerHTML = artJobHTML();
+}
+
+// ---- 再生履歴から追加 -------------------------------------------------
+
+async function importHistory(file) {
+  toast('再生履歴を読み込んでいます…');
+  let entries;
+  try {
+    entries = await readHistoryFile(await file.arrayBuffer());
+  } catch (e) {
+    console.error(e);
+    await choiceDialog({ title: '読み込めませんでした', message: e.message, choices: [{ value: true, label: '閉じる', kind: 'primary' }] });
+    return;
+  }
+  const all = aggregate(entries);
+  if (!all.length) {
+    toast('YouTube Music の再生記録が見つかりませんでした');
+    return;
+  }
+  openHistory(all, entries.length);
+}
+
+function openHistory(all, plays) {
+  const registered = new Set(state.songs.map(dupKey));
+  const candidates = all.filter((c) => !registered.has(c.key));
+  const selected = new Set();
+  const LIMIT = 200;
+  const sheet = openSheet(`<div class="history">
+      <div class="sheet-head"><h3>再生履歴から追加</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+      <div class="sheet-body">
+        <p class="hint hist-sum">${plays.toLocaleString()}回分の再生から、まだ登録していない${candidates.length.toLocaleString()}曲を、よく聴いた順に並べています。</p>
+        <label class="search sm">${icon('search')}<input type="search" data-role="q" placeholder="曲名・アーティストで絞り込み" autocomplete="off" aria-label="絞り込み"></label>
+        <div class="hist-tools">
+          <button type="button" class="pill" data-act="top">上位20曲を選ぶ</button>
+          <button type="button" class="pill" data-act="none">選択を解除</button>
+        </div>
+        <ul class="hist-list" data-role="list"></ul>
+      </div>
+      <div class="sheet-foot">
+        <button type="button" class="btn primary" data-act="add" disabled>選んだ曲を登録</button>
+      </div>
+    </div>`, {
+    label: '再生履歴から追加',
+    className: 'history-layer',
+    onClose: () => { state.historySheet = null; },
+  });
+  state.historySheet = sheet;
+  const q = $('[data-role="q"]', sheet.el);
+  const listEl = $('[data-role="list"]', sheet.el);
+  const addBtn = $('[data-act="add"]', sheet.el);
+  let shown = [];
+  const paint = () => {
+    const words = normalize(q.value).split(' ').filter(Boolean);
+    const filtered = words.length
+      ? candidates.filter((c) => { const k = normalize(`${c.title} ${c.artist}`); return words.every((w) => k.includes(w)); })
+      : candidates;
+    shown = filtered.slice(0, LIMIT);
+    listEl.innerHTML = shown.length
+      ? shown.map((c, i) => `<li><label class="hist-row">
+          <input type="checkbox" data-i="${i}"${selected.has(c.key) ? ' checked' : ''}>
+          <span class="hist-art">${c.video ? `<img src="${thumbnailUrl(c.video)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon('music')}</span>
+          <span class="hist-text"><span class="hist-t">${esc(c.title)}</span><span class="hist-a">${esc(c.artist)}</span></span>
+          <span class="hist-n">${c.count}回</span>
+        </label></li>`).join('') + (filtered.length > LIMIT ? `<li class="hist-more">ほか${filtered.length - LIMIT}曲（絞り込むと表示されます）</li>` : '')
+      : '<li class="hist-more">該当する曲がありません</li>';
+    addBtn.disabled = !selected.size;
+    addBtn.textContent = selected.size ? `選んだ${selected.size}曲を登録` : '選んだ曲を登録';
+  };
+  q.addEventListener('input', paint);
+  listEl.addEventListener('change', (e) => {
+    const c = shown[+e.target.dataset.i];
+    if (!c) return;
+    if (e.target.checked) selected.add(c.key);
+    else selected.delete(c.key);
+    addBtn.disabled = !selected.size;
+    addBtn.textContent = selected.size ? `選んだ${selected.size}曲を登録` : '選んだ曲を登録';
+  });
+  sheet.el.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.act === 'close') sheet.close();
+    else if (b.dataset.act === 'top') {
+      candidates.slice(0, 20).forEach((c) => selected.add(c.key));
+      paint();
+    } else if (b.dataset.act === 'none') {
+      selected.clear();
+      paint();
+    } else if (b.dataset.act === 'add') {
+      const picks = candidates.filter((c) => selected.has(c.key));
+      const now = Date.now();
+      const entriesToAdd = picks.map((c, i) => ({
+        id: null,
+        // 公式音源のサムネイルはジャケット画像なのでそのまま使う。MV などは後で iTunes から探す
+        data: toPayload(normalizeSong({ ...emptySong(), artist: c.artist, title: c.title, artwork: c.topic ? thumbnailUrl(c.video) : null, createdAt: now - i, updatedAt: now })),
+      }));
+      state.store.putSongs(entriesToAdd);
+      const artists = [...new Set(picks.map((c) => c.artist))].filter((n) => !state.profile.artists.includes(n));
+      if (artists.length) state.store.addArtists(artists);
+      sheet.close();
+      const noArt = entriesToAdd.filter((x) => !x.data.artwork).length;
+      toast(`${picks.length}曲を登録しました${noArt ? `（画像なし${noArt}曲は、設定からまとめて探せます）` : ''}`, { duration: 6000 });
+    }
+  });
+  paint();
 }
 
 // ---- 設定 -------------------------------------------------------------
@@ -1163,6 +1588,9 @@ function openSettings() {
   state.settings = sheet;
   paintSettings();
   sheet.el.addEventListener('click', onSettingsClick);
+  sheet.el.addEventListener('change', (e) => {
+    if (e.target.dataset.role === 'show-art') updateView({ showArt: e.target.checked });
+  });
 }
 
 function paintSettings() {
@@ -1171,6 +1599,7 @@ function paintSettings() {
   const vo = voice();
   const user = state.user;
   const local = state.store.mode === 'local';
+  const scrollTop = $('.settings .sheet-body', sheet.el)?.scrollTop ?? 0;
   $('.settings', sheet.el).innerHTML = `
     <div class="sheet-head"><h3>設定</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
     <div class="sheet-body">
@@ -1189,6 +1618,17 @@ function paintSettings() {
         </button>
       </section>
       <section class="set-sec">
+        <h4>ジャケット画像</h4>
+        <label class="switch-row"><span>一覧に表示する</span><input type="checkbox" class="switch" data-role="show-art"${state.view.showArt ? ' checked' : ''}></label>
+        <div data-role="art-job">${artJobHTML()}</div>
+        <p class="hint">画像が未設定の曲を iTunes で探して入れます。1曲に数秒かかるので、曲数が多いときは時間がかかります。</p>
+      </section>
+      <section class="set-sec">
+        <h4>再生履歴から追加</h4>
+        <button type="button" class="btn wide" data-act="history">${icon('history')}YouTube Music の再生履歴を読み込む</button>
+        <p class="hint">Google Takeout で書き出した watch-history.json（ZIP のままでも可）から、よく聴いている曲を候補に出します。履歴はこの端末の中だけで読み込み、どこにも保存しません。</p>
+      </section>
+      <section class="set-sec">
         <h4>バックアップ</h4>
         <div class="btn-row">
           <button type="button" class="btn" data-act="export">${icon('download')}CSVに書き出す</button>
@@ -1203,6 +1643,8 @@ function paintSettings() {
           : `<div class="account"><span class="acc-name">${esc(user?.email ?? user?.name ?? '')}</span><button type="button" class="btn sm" data-act="logout">${icon('logout')}ログアウト</button></div>`}
       </section>
     </div>`;
+  const body = $('.settings .sheet-body', sheet.el);
+  if (body) body.scrollTop = scrollTop;
 }
 
 async function onSettingsClick(e) {
@@ -1221,6 +1663,9 @@ async function onSettingsClick(e) {
     case 'artists': openArtists(); break;
     case 'export': exportCSV(); break;
     case 'import': $('#csv-file').click(); break;
+    case 'art-run': runArtJob(); break;
+    case 'art-cancel': artJob.cancel = true; break;
+    case 'history': $('#history-file').click(); break;
     case 'logout':
       if (await confirmDialog({ title: 'ログアウトしますか？', ok: 'ログアウト' })) {
         state.settings?.close();

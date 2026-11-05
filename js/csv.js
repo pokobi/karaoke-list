@@ -14,6 +14,7 @@ export const COLUMNS = [
   { id: 'singCount', label: '歌った回数', type: 'int' },
   { id: 'lastSungAt', label: '最終歌唱日', type: 'date' },
   { id: 'memo', label: 'メモ' },
+  { id: 'artwork', label: 'ジャケット画像', type: 'url' },
   { id: 'createdAt', label: '登録日', type: 'date' },
 ];
 
@@ -132,6 +133,10 @@ export function rowsToSongs(rows) {
           if (!Number.isFinite(v)) { errors.push(`${line}行目: ${col.label}「${raw}」を読み取れません`); s[col.id] = null; } else s[col.id] = v;
           break;
         }
+        case 'url':
+          s[col.id] = /^https:\/\/\S+$/i.test(raw) ? raw : null;
+          if (raw && !s[col.id]) errors.push(`${line}行目: ${col.label}「${raw.slice(0, 40)}」を読み取れません`);
+          break;
         case 'bool':
           s[col.id] = /^(1|true|yes|はい|○|◯|★)$/i.test(raw);
           break;

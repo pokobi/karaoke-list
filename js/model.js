@@ -19,11 +19,20 @@ export const SORTS = [
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const note = (v) => (isNote(v) ? v : null);
 
+// ジャケット画像は https の URL だけを受け付ける
+export function safeImageUrl(v) {
+  if (typeof v !== 'string') return null;
+  const s = v.trim();
+  return /^https:\/\/[^\s"'<>]+$/i.test(s) && s.length <= 1000 ? s : null;
+}
+
+export const isRangeMissing = (song) => !isNote(song.low) || !isNote(song.chestHigh);
+
 export function emptySong() {
   return {
     artist: '', title: '', low: null, chestHigh: null, falsettoHigh: null, key: 0,
     favorite: false, tags: [], score: null, memo: '', singCount: 0, lastSungAt: null,
-    createdAt: 0, updatedAt: 0,
+    artwork: null, createdAt: 0, updatedAt: 0,
   };
 }
 
@@ -42,6 +51,7 @@ export function normalizeSong(raw) {
     memo: String(raw.memo ?? ''),
     singCount: Number.isInteger(raw.singCount) && raw.singCount > 0 ? raw.singCount : 0,
     lastSungAt: num(raw.lastSungAt),
+    artwork: safeImageUrl(raw.artwork),
     createdAt: num(raw.createdAt) ?? 0,
     updatedAt: num(raw.updatedAt) ?? 0,
   };
@@ -66,12 +76,14 @@ export function dupKey(song) {
 export function defaultView() {
   return {
     favoriteOnly: false,
+    missingRange: false,
     artist: '',
     tags: [],
     range: { low: {}, chestHigh: {}, falsettoHigh: {} },
     basis: 'current',
     sortBy: 'createdAt',
     sortDir: 'desc',
+    showArt: true,
   };
 }
 
@@ -85,12 +97,14 @@ export function sanitizeView(v) {
   }
   return {
     favoriteOnly: v.favoriteOnly === true,
+    missingRange: v.missingRange === true,
     artist: typeof v.artist === 'string' ? v.artist : '',
     tags: Array.isArray(v.tags) ? v.tags.filter((t) => typeof t === 'string') : [],
     range,
     basis: v.basis === 'original' ? 'original' : 'current',
     sortBy: SORTS.some((s) => s.id === v.sortBy) ? v.sortBy : d.sortBy,
     sortDir: v.sortDir === 'asc' ? 'asc' : 'desc',
+    showArt: v.showArt !== false,
   };
 }
 
@@ -106,6 +120,7 @@ export function hasRangeFilter(view) {
 
 export function matches(song, view, terms) {
   if (view.favoriteOnly && !song.favorite) return false;
+  if (view.missingRange && !isRangeMissing(song)) return false;
   if (view.artist && song.artist !== view.artist) return false;
   if (view.tags.length && !view.tags.some((t) => song.tags.includes(t))) return false;
   for (const f of RANGE_FIELDS) {
