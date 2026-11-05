@@ -9,7 +9,7 @@ import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
 import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, openPopover, closePopover, popoverAnchor, pickNote } from './ui.js';
 import { createLocalStore } from './store-local.js';
 
-const VIEW_KEY = 'karaoke-list:view:v1';
+const VIEW_KEY = 'range-note:view:v1';
 const HOLD_MS = 1400;
 const DEFAULT_OCTAVE = { low: 1, chestHigh: 2, falsettoHigh: 3 };
 const wide = matchMedia('(min-width: 1024px)');
@@ -1261,7 +1261,7 @@ function exportCSV() {
   const d = new Date();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `karaoke-list-${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.csv`;
+  a.download = `range-note-${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.csv`;
   document.body.append(a);
   a.click();
   a.remove();
