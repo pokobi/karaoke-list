@@ -1,7 +1,7 @@
 {
-  "name": "音域ノート",
-  "short_name": "音域ノート",
-  "description": "カラオケで歌う曲の音域とキーをまとめるリスト",
+  "name": "カラオケリスト",
+  "short_name": "カラオケ",
+  "description": "カラオケで歌う曲と音域・キーのリスト",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",

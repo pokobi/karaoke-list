@@ -1,7 +1,7 @@
 // Firebase を設定していないときに使う、この端末のブラウザだけに保存するストア。
 // Firebase 版（store-firebase.js）と同じ形の API を持つ。
 
-const KEY = 'range-note:local:v1';
+const KEY = 'karaoke-list:local:v1';
 
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 20) : Math.random().toString(36).slice(2) + Date.now().toString(36);
