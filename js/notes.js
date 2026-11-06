@@ -35,6 +35,15 @@ export function noteName(index) {
   return octaveName(oct) + NOTE_NAMES[n];
 }
 
+// 音楽で一般的な表記（中央のドが C4）。カラオケ表記は A から次のオクターブになるので、
+// A・A#・B は 1 つ下の番号になる（例：mid1G = G3、mid2C = C4、hiA = A4）
+export function scientificName(index) {
+  if (!isNote(index)) return '';
+  const oct = Math.floor(index / 12);
+  const n = ((index % 12) + 12) % 12;
+  return `${NOTE_NAMES[n]}${oct + (n >= 3 ? 2 : 1)}`;
+}
+
 export function parseNote(text) {
   if (text == null) return null;
   const s = String(text).normalize('NFKC').replace(/♯/g, '#').replace(/\s+/g, '');
@@ -113,15 +122,16 @@ export function keyTone(k) {
 // 自分の音域に収まるキーのうち、原曲キーに最も近いものを返す。
 // 収まるキーがない場合は、はみ出しが最小になるキー（その中で原曲に近いもの）を返す。
 // 計算に使える音が揃っていなければ null。
-export function recommendKey(song, voice) {
+// margin を指定すると、自分の最高音（地声・裏声）を margin 半音だけ低く見積もって、余裕を残す。
+export function recommendKey(song, voice, { margin = 0 } = {}) {
   if (!song || !voice) return null;
   let kmin = -Infinity;
   let kmax = Infinity;
   if (isNote(song.low) && isNote(voice.low)) kmin = voice.low - song.low;
-  if (isNote(song.chestHigh) && isNote(voice.chestHigh)) kmax = Math.min(kmax, voice.chestHigh - song.chestHigh);
+  if (isNote(song.chestHigh) && isNote(voice.chestHigh)) kmax = Math.min(kmax, voice.chestHigh - margin - song.chestHigh);
   if (isNote(song.falsettoHigh)) {
     const top = isNote(voice.falsettoHigh) ? voice.falsettoHigh : voice.chestHigh;
-    if (isNote(top)) kmax = Math.min(kmax, top - song.falsettoHigh);
+    if (isNote(top)) kmax = Math.min(kmax, top - margin - song.falsettoHigh);
   }
   if (kmin === -Infinity && kmax === Infinity) return null;
   if (kmin <= kmax) {

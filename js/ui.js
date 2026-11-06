@@ -1,5 +1,14 @@
 // 画面部品：シート（下から出るパネル）、確認ダイアログ、トースト、音階ピッカー、ポップオーバー。
-import { NOTE_NAMES, OCTAVES, noteName, isNote } from './notes.js';
+import { NOTE_NAMES, OCTAVES, noteName, scientificName, isNote } from './notes.js';
+import { getNoteStyle } from './display.js';
+
+// ピッカーの小さい表記（設定の「音域の表記」に合わせる）
+function pickerLabel(v) {
+  const style = getNoteStyle();
+  if (style === 'scientific') return scientificName(v);
+  if (style === 'both') return `${noteName(v)}・${scientificName(v)}`;
+  return noteName(v);
+}
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -128,6 +137,39 @@ export function choiceDialog({ title, message = '', choices }) {
   });
 }
 
+// 1 行の文字を入力してもらう。戻り値：入力した文字（前後の空白を除く）、キャンセルなら null
+export function promptDialog({ title, message = '', value = '', placeholder = '', ok = 'OK', maxLength = 30 }) {
+  return new Promise((resolve) => {
+    let result = null;
+    const s = openSheet(`<form class="dlg" novalidate>
+        <h3 class="dlg-title">${esc(title)}</h3>
+        ${message ? `<p class="dlg-msg">${esc(message)}</p>` : ''}
+        <input class="input" data-role="value" maxlength="${maxLength}" placeholder="${esc(placeholder)}" value="${esc(value)}" enterkeyhint="done" autocomplete="off" aria-label="${esc(title)}">
+        <div class="dlg-actions">
+          <button type="button" class="btn" data-act="cancel">キャンセル</button>
+          <button type="submit" class="btn primary">${esc(ok)}</button>
+        </div>
+      </form>`, { variant: 'dialog', label: title, onClose: () => resolve(result) });
+    const form = $('form', s.el);
+    const input = $('[data-role="value"]', s.el);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = input.value.trim();
+      if (!v) {
+        input.focus();
+        return;
+      }
+      result = v;
+      s.close();
+    });
+    $('[data-act="cancel"]', s.el).addEventListener('click', () => s.close());
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 60);
+  });
+}
+
 export async function confirmDialog({ title, message = '', ok = 'OK', cancel = 'キャンセル', danger = false }) {
   const v = await choiceDialog({
     title,
@@ -247,9 +289,9 @@ export function pickNote({ title, value = null, octave = 1, clearLabel = 'なし
       $$('[data-oct]', s.el).forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.oct === oct)));
       $$('[data-n]', s.el).forEach((b) => {
         const v = oct * 12 + +b.dataset.n;
-        $('.nf', b).textContent = noteName(v);
+        $('.nf', b).textContent = pickerLabel(v);
         b.classList.toggle('sel', v === value);
-        b.setAttribute('aria-label', noteName(v));
+        b.setAttribute('aria-label', pickerLabel(v));
       });
     };
     paint();

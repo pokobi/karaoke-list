@@ -6,12 +6,13 @@ import {
 import { collator, normalize } from './text.js';
 import {
   SORTS, emptySong, normalizeSong, toPayload, dupKey, sanitizeView, defaultView, applyView, hasRangeFilter,
-  artistCounts, allTags, suggestArtists,
+  artistCounts, allTags, suggestArtists, tagCounts, ACCENTS, NOTE_STYLES, REC_MARGINS, sanitizePrefs,
 } from './model.js';
+import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
 import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, findTrack, waitForSlot } from './itunes.js';
 import { readHistoryFile, aggregate, thumbnailUrl } from './history.js';
-import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, openPopover, closePopover, popoverAnchor, pickNote } from './ui.js';
+import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, openPopover, closePopover, popoverAnchor, pickNote, promptDialog } from './ui.js';
 import { createLocalStore } from './store-local.js';
 import { plugins } from './plugins.js';
 import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, hasRandomRange } from './random.js';
@@ -21,6 +22,27 @@ const HOLD_MS = 1400;
 const DEFAULT_OCTAVE = { low: 1, chestHigh: 2, falsettoHigh: 3 };
 const wide = matchMedia('(min-width: 1024px)');
 
+// この端末だけの表示設定（テーマ・一覧の文字の大きさ）。アクセントカラーは起動直後の表示用に控えておく
+const PREFS_KEY = 'karaoke-list:prefs:v1';
+const devicePrefs = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFS_KEY)) || {};
+    return {
+      theme: p.theme === 'light' || p.theme === 'dark' ? p.theme : 'system',
+      density: p.density === 'compact' || p.density === 'large' ? p.density : 'normal',
+      accent: typeof p.accent === 'string' ? p.accent : 'indigo',
+    };
+  } catch {
+    return { theme: 'system', density: 'normal', accent: 'indigo' };
+  }
+})();
+
+function saveDevicePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(devicePrefs));
+  } catch { /* 保存できなくても動作は続ける */ }
+}
+
 const state = {
   store: null,
   user: null,
@@ -28,7 +50,7 @@ const state = {
   loaded: false,
   songs: [],
   byId: new Map(),
-  profile: { range: {}, artists: [] },
+  profile: { range: {}, artists: [], tags: null, prefs: sanitizePrefs() },
   query: '',
   view: loadView(),
   visible: [],
@@ -40,6 +62,9 @@ const state = {
   filterSheet: null,
   historySheet: null,
   random: { opts: null, sheet: null, picks: [], artistQuery: '' },
+  select: { on: false, ids: new Set() },
+  tagSheet: null,
+  bulkSheet: null,
 };
 
 function loadView() {
@@ -58,6 +83,9 @@ function saveView() {
 
 const voice = () => state.profile.range ?? {};
 const hasVoice = () => RANGE_FIELDS.some((f) => isNote(voice()[f.id]));
+const recMargin = () => state.profile.prefs?.recMargin ?? 0;
+const recommend = (s) => recommendKey(s, voice(), { margin: recMargin() });
+const tagList = () => allTags(state.songs, state.profile.tags);
 const pad2 = (n) => String(n).padStart(2, '0');
 const fmtDate = (ms) => {
   if (!ms) return '';
@@ -84,6 +112,7 @@ function paintKv(el, key, octave) {
 boot();
 
 async function boot() {
+  applyDevicePrefs();
   registerServiceWorker();
   bindStatic();
   try {
@@ -166,7 +195,10 @@ function onData({ songs, profile }) {
   state.profile = {
     range: profile?.range && typeof profile.range === 'object' ? profile.range : {},
     artists: Array.isArray(profile?.artists) ? profile.artists.filter((n) => typeof n === 'string') : [],
+    tags: Array.isArray(profile?.tags) ? profile.tags.filter((n) => typeof n === 'string' && n.trim()) : null,
+    prefs: sanitizePrefs(profile?.prefs),
   };
+  applyAccountPrefs();
   state.loaded = true;
   render();
   paintDetail();
@@ -174,6 +206,8 @@ function onData({ songs, profile }) {
   paintSettings();
   paintArtists();
   paintRandomResults();
+  paintTagManager();
+  paintSelbar();
 }
 
 // ---- 一覧の描画 -------------------------------------------------------
@@ -235,6 +269,7 @@ function renderLoadError() {
 
 function createItem(id) {
   const el = h(`<li class="song" data-id="${esc(id)}">
+    <span class="sel-mark" aria-hidden="true">${icon('check')}</span>
     <span class="art" aria-hidden="true">${icon('music')}<img alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" hidden></span>
     <button type="button" class="song-main">
       <span class="song-title">${icon('star-fill', 'fav')}<span class="t"></span></span>
@@ -290,7 +325,7 @@ function updateItem(it, s) {
   RANGE_FIELDS.forEach((f, i) => {
     const v = s[f.id];
     const el = it.rv[i];
-    const text = isNote(v) ? noteName(v + s.key) : '—';
+    const text = isNote(v) ? fmtNote(v + s.key) : '—';
     el.textContent = text;
     el.classList.toggle('none', !isNote(v));
     el.classList.toggle('long', text.length >= 7);
@@ -305,6 +340,7 @@ function updateItem(it, s) {
 function renderList(list) {
   const ul = $('#list');
   ul.classList.toggle('no-art', !state.view.showArt);
+  ul.classList.toggle('selecting', state.select.on);
   $$('.skeleton', ul).forEach((el) => el.remove());
   const seen = new Set();
   let prev = null;
@@ -319,6 +355,7 @@ function renderList(list) {
     const loading = index++ < 16 ? 'eager' : 'lazy';
     if (it.art.loading !== loading) it.art.loading = loading;
     updateItem(it, s);
+    it.el.classList.toggle('selected', state.select.on && state.select.ids.has(s.id));
     seen.add(s.id);
     const expected = prev ? prev.nextSibling : ul.firstChild;
     if (expected !== it.el) ul.insertBefore(it.el, expected);
@@ -362,7 +399,7 @@ function renderChips() {
   for (const f of RANGE_FIELDS) {
     const { min, max } = v.range[f.id] ?? {};
     if (!isNote(min) && !isNote(max)) continue;
-    const text = isNote(min) && isNote(max) ? `${noteName(min)}〜${noteName(max)}` : isNote(min) ? `${noteName(min)}以上` : `${noteName(max)}以下`;
+    const text = isNote(min) && isNote(max) ? `${fmtNote(min)}〜${fmtNote(max)}` : isNote(min) ? `${fmtNote(min)}以上` : `${fmtNote(max)}以下`;
     chips.push({ k: `range:${f.id}`, label: `${f.short} ${text}${v.basis === 'original' ? '（原曲）' : ''}` });
   }
   const sig = JSON.stringify(chips);
@@ -377,8 +414,8 @@ function renderChips() {
 let fpSig = '';
 function renderFilterPanel() {
   const counts = artistCounts(state.songs);
-  const tags = allTags(state.songs);
-  const sig = JSON.stringify([state.view, [...counts], tags]);
+  const tags = tagList();
+  const sig = JSON.stringify([state.view, [...counts], tags, getNoteStyle()]);
   if (sig === fpSig) return;
   fpSig = sig;
   const v = state.view;
@@ -394,9 +431,9 @@ function renderFilterPanel() {
     const { min, max } = v.range[f.id] ?? {};
     return `<div class="rf-row" data-field="${f.id}">
       <span class="rf-label">${f.label}</span>
-      <button type="button" class="rf-btn${isNote(min) ? ' set' : ''}" data-bound="min">${isNote(min) ? noteName(min) : '下限なし'}</button>
+      <button type="button" class="rf-btn${isNote(min) ? ' set' : ''}" data-bound="min">${isNote(min) ? fmtNote(min) : '下限なし'}</button>
       <span class="rf-sep">〜</span>
-      <button type="button" class="rf-btn${isNote(max) ? ' set' : ''}" data-bound="max">${isNote(max) ? noteName(max) : '上限なし'}</button>
+      <button type="button" class="rf-btn${isNote(max) ? ' set' : ''}" data-bound="max">${isNote(max) ? fmtNote(max) : '上限なし'}</button>
     </div>`;
   }).join('');
   $('#filter-panel [data-act="reset"]').disabled = filterCount() === 0;
@@ -461,6 +498,8 @@ function bindStatic() {
   $('#btn-sort').addEventListener('click', (e) => openSortMenu(e.currentTarget));
   $('#btn-sort-dir').addEventListener('click', () => updateView({ sortDir: state.view.sortDir === 'asc' ? 'desc' : 'asc' }));
   $('#btn-random').addEventListener('click', openRandom);
+  $('#btn-select').addEventListener('click', () => setSelectMode(!state.select.on));
+  $('#selbar').addEventListener('click', onSelbarClick);
   $('#fab').addEventListener('click', () => openForm());
 
   $('#list').addEventListener('click', (e) => {
@@ -469,6 +508,10 @@ function bindStatic() {
     const id = li.dataset.id;
     const s = state.byId.get(id);
     if (!s) return;
+    if (state.select.on) {
+      toggleSelect(id);
+      return;
+    }
     if (e.target.closest('.k-up')) setKey(id, s.key + 1);
     else if (e.target.closest('.k-down')) setKey(id, s.key - 1);
     else if (e.target.closest('.kv')) openKeyMenu(id, e.target.closest('.kv'));
@@ -636,7 +679,7 @@ function recommendHTML(s, { compact = false } = {}) {
   if (!hasVoice()) {
     return `<button type="button" class="rec-link" data-act="voice">${icon('mic')}<span>自分の音域を登録すると、おすすめキーを表示します</span></button>`;
   }
-  const rec = recommendKey(s, voice());
+  const rec = recommend(s);
   if (!rec) return '<p class="rec-note">音域が未入力のため、おすすめキーを計算できません</p>';
   const note = rec.fits ? '' : `<p class="rec-note warn">音域に収まりません（${rec.short}半音分）。一番近いキーです</p>`;
   if (rec.key === s.key) {
@@ -719,7 +762,7 @@ function paintDetail() {
     return;
   }
   const root = $('.detail', d.sheet.el);
-  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, voice()]);
+  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, voice(), state.profile.tags, getNoteStyle(), recMargin()]);
   if (sig !== d.sig) {
     d.sig = sig;
     root.innerHTML = detailHTML(s, d);
@@ -736,7 +779,7 @@ function paintDetail() {
   for (const f of RANGE_FIELDS) {
     const td = $(`[data-role="cur-${f.id}"]`, root);
     const v = s[f.id];
-    td.textContent = isNote(v) ? noteName(v + s.key) : '—';
+    td.innerHTML = isNote(v) ? fmtNoteHTML(v + s.key) : '—';
     td.dataset.tone = isNote(v) ? keyTone(s.key) : 'zero';
   }
   $('[data-role="rec"]', root).innerHTML = recommendHTML(s);
@@ -749,9 +792,9 @@ function detailHTML(s, d) {
     const v = s[f.id];
     return `<tr>
       <th scope="row">${f.label}</th>
-      <td class="orig">${isNote(v) ? noteName(v) : '<span class="none">—</span>'}</td>
+      <td class="orig">${isNote(v) ? fmtNoteHTML(v) : '<span class="none">—</span>'}</td>
       <td class="cur" data-role="cur-${f.id}"></td>
-      ${showVoice ? `<td class="mine">${isNote(vo[f.id]) ? noteName(vo[f.id]) : '—'}</td>` : ''}
+      ${showVoice ? `<td class="mine">${isNote(vo[f.id]) ? fmtNoteHTML(vo[f.id]) : '—'}</td>` : ''}
     </tr>`;
   }).join('');
   return `
@@ -792,7 +835,10 @@ function detailHTML(s, d) {
         <div class="stat"><span class="sl">採点</span><span class="sv">${s.score != null ? `${fmtScore(s.score)}<small>点</small>` : '—'}</span></div>
       </div>
       <button type="button" class="btn primary wide sung" data-act="sung">${icon('mic')}歌った！</button>
-      ${s.tags.length ? `<div class="d-tags chip-set">${s.tags.map((t) => `<span class="chip static">${esc(t)}</span>`).join('')}</div>` : ''}
+      <section class="d-sec d-tagsec">
+        <span class="label">タグ</span>
+        <div class="chip-set">${tagList().map((t) => `<button type="button" class="chip${s.tags.includes(t) ? ' on' : ''}" data-dtag="${esc(t)}" aria-pressed="${s.tags.includes(t)}">${esc(t)}</button>`).join('')}<button type="button" class="chip add" data-act="tag-new">${icon('plus')}新しいタグ</button></div>
+      </section>
       ${s.memo ? `<div class="d-memo">${esc(s.memo)}</div>` : ''}
     </div>
     <div class="sheet-foot">
@@ -811,8 +857,18 @@ async function onDetailClick(e) {
     setTotalKey(s.id, +b.dataset.k);
     return;
   }
+  if (b.dataset.dtag != null) {
+    const t = b.dataset.dtag;
+    state.store.updateSong(s.id, { tags: s.tags.includes(t) ? s.tags.filter((x) => x !== t) : [...s.tags, t] });
+    return;
+  }
   switch (b.dataset.act) {
     case 'close': d.sheet.close(); break;
+    case 'tag-new': {
+      const name = await askNewTag();
+      if (name && !s.tags.includes(name)) state.store.updateSong(s.id, { tags: [...s.tags, name] });
+      break;
+    }
     case 'k-down': setKey(s.id, s.key - 1); break;
     case 'k-up': setKey(s.id, s.key + 1); break;
     case 'k-reset': setKey(s.id, 0, 0); break;
@@ -878,7 +934,7 @@ function saveRandomOptions() {
   } catch { /* 保存できなくても動作は続ける */ }
 }
 
-const randomPoolNow = () => randomPool(state.songs, state.random.opts, { voice: voice() });
+const randomPoolNow = () => randomPool(state.songs, state.random.opts, { voice: voice(), margin: recMargin() });
 
 function hasRandomCondition() {
   const o = state.random.opts;
@@ -936,7 +992,7 @@ function updateRandom(patch) {
 }
 
 function rangeText(s) {
-  const parts = RANGE_FIELDS.filter((f) => isNote(s[f.id])).map((f) => `${f.short} ${noteName(s[f.id] + s.key)}`);
+  const parts = RANGE_FIELDS.filter((f) => isNote(s[f.id])).map((f) => `${f.short} ${fmtNote(s[f.id] + s.key)}`);
   return parts.length ? parts.join('・') : '音域未入力';
 }
 
@@ -951,7 +1007,7 @@ function randomKeyText(s) {
 
 function randomRec(s) {
   if (!hasVoice()) return '';
-  const rec = recommendKey(s, voice());
+  const rec = recommend(s);
   if (!rec || rec.key === s.key) return '';
   return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b> にする</button>`;
 }
@@ -1017,7 +1073,7 @@ function paintRandomConditions() {
   if (!sheet) return;
   const o = state.random.opts;
   const artistCount = artistCounts(state.songs).size;
-  const tags = allTags(state.songs);
+  const tags = tagList();
   const voiceOk = hasVoice();
   $('[data-role="cond"]', sheet.el).innerHTML = `
     <label class="switch-row"><span>お気に入りのみ</span><input type="checkbox" class="switch" data-opt="favoriteOnly"${o.favoriteOnly ? ' checked' : ''}></label>
@@ -1047,9 +1103,9 @@ function paintRandomConditions() {
         const { min, max } = o.range[f.id] ?? {};
         return `<div class="rf-row" data-rfield="${f.id}">
           <span class="rf-label">${f.label}</span>
-          <button type="button" class="rf-btn${isNote(min) ? ' set' : ''}" data-bound="min">${isNote(min) ? noteName(min) : '下限なし'}</button>
+          <button type="button" class="rf-btn${isNote(min) ? ' set' : ''}" data-bound="min">${isNote(min) ? fmtNote(min) : '下限なし'}</button>
           <span class="rf-sep">〜</span>
-          <button type="button" class="rf-btn${isNote(max) ? ' set' : ''}" data-bound="max">${isNote(max) ? noteName(max) : '上限なし'}</button>
+          <button type="button" class="rf-btn${isNote(max) ? ' set' : ''}" data-bound="max">${isNote(max) ? fmtNote(max) : '上限なし'}</button>
         </div>`;
       }).join('')}</div>
     </div>
@@ -1289,7 +1345,7 @@ function openForm(song = null) {
     for (const f of RANGE_FIELDS) {
       const b = el(`[data-field="${f.id}"]`);
       const v = draft[f.id];
-      $('.nf-v', b).textContent = isNote(v) ? noteName(v) : f.id === 'falsettoHigh' ? 'なし' : '未選択';
+      $('.nf-v', b).innerHTML = isNote(v) ? fmtNoteHTML(v) : f.id === 'falsettoHigh' ? 'なし' : '未選択';
       b.classList.toggle('set', isNote(v));
     }
     const warns = [];
@@ -1311,7 +1367,7 @@ function openForm(song = null) {
   };
 
   const paintTags = () => {
-    const tags = [...new Set([...allTags(state.songs), ...extraTags, ...draft.tags])];
+    const tags = [...new Set([...tagList(), ...extraTags, ...draft.tags])];
     el('[data-role="tags"]').innerHTML = tags.map((t) => {
       const on = draft.tags.includes(t);
       return `<button type="button" class="chip${on ? ' on' : ''}" data-tag="${esc(t)}" aria-pressed="${on}">${esc(t)}</button>`;
@@ -1493,6 +1549,7 @@ function openForm(song = null) {
     }
     if (!data.artwork) autoArtwork(id, artist, title);
     if (!state.profile.artists.includes(artist)) state.store.addArtists([artist]);
+    if (data.tags.length) ensureTags(data.tags);
     toast(isNew ? `登録しました：${title}` : '保存しました');
     if (next) {
       draft = { ...emptySong(), artist, tags: [] };
@@ -1922,7 +1979,10 @@ function openSettings() {
   paintSettings();
   sheet.el.addEventListener('click', onSettingsClick);
   sheet.el.addEventListener('change', (e) => {
-    if (e.target.dataset.role === 'show-art') updateView({ showArt: e.target.checked });
+    if (e.target.dataset.role === 'show-art') {
+      updateView({ showArt: e.target.checked });
+      paintSettings();
+    }
   });
 }
 
@@ -1933,26 +1993,50 @@ function paintSettings() {
   const user = state.user;
   const local = state.store.mode === 'local';
   const scrollTop = $('.settings .sheet-body', sheet.el)?.scrollTop ?? 0;
+  const p = state.profile.prefs;
+  const seg = (attr, options, current) => `<div class="seg full" role="group">${options.map(([v, l]) => `<button type="button" data-${attr}="${v}" aria-pressed="${String(v) === String(current)}">${l}</button>`).join('')}</div>`;
   $('.settings', sheet.el).innerHTML = `
     <div class="sheet-head"><h3>設定</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
     <div class="sheet-body">
       <section class="set-sec">
-        <h4>自分の音域</h4>
-        <div class="note-fields">
-          ${RANGE_FIELDS.map((f) => `<button type="button" class="note-field${isNote(vo[f.id]) ? ' set' : ''}" data-voice="${f.id}"><span class="nf-l">${f.label}</span><span class="nf-v">${isNote(vo[f.id]) ? noteName(vo[f.id]) : '未選択'}</span></button>`).join('')}
-        </div>
-        <p class="hint">登録すると、曲ごとに音域に収まるキーを計算して「おすすめキー」として表示します。</p>
+        <h4>表示（この端末）</h4>
+        <span class="set-label">テーマ</span>
+        ${seg('theme-set', [['system', '端末に合わせる'], ['light', 'ライト'], ['dark', 'ダーク']], devicePrefs.theme)}
+        <span class="set-label">一覧の文字の大きさ</span>
+        ${seg('density', [['compact', 'コンパクト'], ['normal', '標準'], ['large', '大きめ']], devicePrefs.density)}
+        <label class="switch-row"><span>一覧にジャケット画像を表示</span><input type="checkbox" class="switch" data-role="show-art"${state.view.showArt ? ' checked' : ''}></label>
       </section>
       <section class="set-sec">
-        <h4>入力補助</h4>
-        <button type="button" class="row-btn" data-act="artists">
+        <h4>表示（すべての端末で共通）</h4>
+        <span class="set-label">アクセントカラー</span>
+        <div class="accent-set">${ACCENTS.map((a) => `<button type="button" class="swatch" style="background:${a.color}" data-accent-set="${a.id}" aria-pressed="${p.accent === a.id}" aria-label="${a.label}" title="${a.label}">${icon('check')}</button>`).join('')}</div>
+        <span class="set-label">音域の表記</span>
+        ${seg('note-style', NOTE_STYLES.map((s) => [s.id, s.label]), p.noteStyle)}
+        <p class="hint">G4 形式は音楽で一般的な表記で、mid2G は G4、hiA は A4 です。「両方」では、詳細画面や入力欄に並べて表示します。</p>
+      </section>
+      <section class="set-sec">
+        <h4>自分の音域</h4>
+        <div class="note-fields">
+          ${RANGE_FIELDS.map((f) => `<button type="button" class="note-field${isNote(vo[f.id]) ? ' set' : ''}" data-voice="${f.id}"><span class="nf-l">${f.label}</span><span class="nf-v">${isNote(vo[f.id]) ? fmtNoteHTML(vo[f.id]) : '未選択'}</span></button>`).join('')}
+        </div>
+        <p class="hint">登録すると、曲ごとに音域に収まるキーを計算して「おすすめキー」として表示します。</p>
+        <span class="set-label">おすすめキーの余裕</span>
+        ${seg('margin', REC_MARGINS.map((m) => [m, m ? `${m}半音` : 'ギリギリまで']), p.recMargin)}
+        <p class="hint">自分の最高音（地声・裏声）より、指定した分だけ低い音までに収まるキーをおすすめします。ランダム選曲の「歌える曲」の判定にも使います。</p>
+      </section>
+      <section class="set-sec">
+        <h4>タグと入力補助</h4>
+        <button type="button" class="row-btn" data-act="tags">
+          <span class="row-l">${icon('tag')}タグの管理</span>
+          <span class="row-r">${tagList().length}件${icon('chevron-right')}</span>
+        </button>
+        <button type="button" class="row-btn" data-act="artists" style="margin-top:8px">
           <span class="row-l">${icon('list')}アーティスト名の候補</span>
           <span class="row-r">${state.profile.artists.length}件${icon('chevron-right')}</span>
         </button>
       </section>
       <section class="set-sec">
         <h4>ジャケット画像</h4>
-        <label class="switch-row"><span>一覧に表示する</span><input type="checkbox" class="switch" data-role="show-art"${state.view.showArt ? ' checked' : ''}></label>
         <div data-role="art-job">${artJobHTML()}</div>
         <p class="hint">画像が未設定の曲を iTunes で探して入れます。1曲に数秒かかるので、曲数が多いときは時間がかかります。</p>
       </section>
@@ -1991,9 +2075,15 @@ async function onSettingsClick(e) {
     state.store.updateProfile({ range: { ...voice(), [id]: v } });
     return;
   }
+  if (b.dataset.themeSet) return setDevicePref({ theme: b.dataset.themeSet });
+  if (b.dataset.density) return setDevicePref({ density: b.dataset.density });
+  if (b.dataset.accentSet) return updateAccountPrefs({ accent: b.dataset.accentSet });
+  if (b.dataset.noteStyle) return updateAccountPrefs({ noteStyle: b.dataset.noteStyle });
+  if (b.dataset.margin != null) return updateAccountPrefs({ recMargin: +b.dataset.margin });
   switch (b.dataset.act) {
     case 'close': state.settings.close(); break;
     case 'artists': openArtists(); break;
+    case 'tags': openTagManager(); break;
     case 'export': exportCSV(); break;
     case 'import': $('#csv-file').click(); break;
     case 'art-run': runArtJob(); break;
@@ -2051,6 +2141,308 @@ function paintArtists() {
     ? names.map((n) => `<li><span class="al-name">${esc(n)}</span><span class="al-count">${counts.get(n) ?? 0}曲</span>
         <button type="button" class="icon-btn sm" data-remove="${esc(n)}" aria-label="${esc(n)}を候補から外す">${icon('trash')}</button></li>`).join('')
     : `<li class="al-empty">${q ? '一致する名前がありません' : 'まだ候補がありません'}</li>`;
+}
+
+// ---- 表示の設定 -------------------------------------------------------
+// テーマと一覧の文字の大きさは端末ごと（この端末に記憶）。
+// アクセントカラー・音域の表記・おすすめキーの余裕はアカウントに保存し、全端末で共通にする。
+
+function applyDevicePrefs() {
+  const root = document.documentElement;
+  if (devicePrefs.theme === 'system') delete root.dataset.theme;
+  else root.dataset.theme = devicePrefs.theme;
+  if (devicePrefs.density === 'normal') delete root.dataset.density;
+  else root.dataset.density = devicePrefs.density;
+  // スマホのステータスバーの色もテーマに合わせる
+  $$('meta[name="theme-color"]').forEach((m) => {
+    const dark = devicePrefs.theme === 'system' ? m.media.includes('dark') : devicePrefs.theme === 'dark';
+    m.content = dark ? '#0d0e11' : '#f4f5f7';
+  });
+}
+
+function setDevicePref(patch) {
+  Object.assign(devicePrefs, patch);
+  saveDevicePrefs();
+  applyDevicePrefs();
+  paintSettings();
+}
+
+function applyAccountPrefs() {
+  const p = state.profile.prefs;
+  if (getNoteStyle() !== p.noteStyle) {
+    setNoteStyle(p.noteStyle);
+    // 表記が変わったら、一覧などを描き直す
+    items.forEach((it) => { it.sig = ''; });
+    fpSig = '';
+    chipsSig = '';
+    if (state.detail) state.detail.sig = '';
+  }
+  const root = document.documentElement;
+  if (p.accent === 'indigo') delete root.dataset.accent;
+  else root.dataset.accent = p.accent;
+  if (devicePrefs.accent !== p.accent) {
+    devicePrefs.accent = p.accent;
+    saveDevicePrefs();
+  }
+}
+
+function updateAccountPrefs(patch) {
+  const next = { ...state.profile.prefs, ...patch };
+  state.profile.prefs = next;
+  applyAccountPrefs();
+  render();
+  paintDetail();
+  paintKeyMenu();
+  paintSettings();
+  paintRandomResults();
+  state.store.updateProfile({ prefs: next });
+}
+
+// ---- タグ -------------------------------------------------------------
+
+// 設定のタグ一覧に足りないタグを足す（最初の 1 回は、今あるタグをすべて一覧として保存する）
+function ensureTags(names) {
+  const cur = tagList();
+  const add = [...new Set(names.map((n) => String(n).trim()).filter((n) => n && !cur.includes(n)))];
+  const saved = state.profile.tags;
+  if (!add.length && Array.isArray(saved) && cur.every((t) => saved.includes(t))) return;
+  const next = [...cur, ...add];
+  state.profile.tags = next;
+  state.store.updateProfile({ tags: next });
+}
+
+function replaceTagInConditions(oldName, newName) {
+  const swap = (list) => [...new Set(list.flatMap((t) => (t === oldName ? (newName ? [newName] : []) : [t])))];
+  if (state.view.tags.includes(oldName)) updateView({ tags: swap(state.view.tags) });
+  const ro = state.random.opts;
+  if (ro?.tags.includes(oldName)) {
+    state.random.opts = { ...ro, tags: swap(ro.tags) };
+    saveRandomOptions();
+  }
+}
+
+function renameTag(oldName, newName) {
+  const n = newName.trim();
+  if (!n || n === oldName) return;
+  const list = tagList();
+  const next = list.includes(n) ? list.filter((t) => t !== oldName) : list.map((t) => (t === oldName ? n : t));
+  state.profile.tags = next;
+  state.store.updateProfile({ tags: next });
+  const entries = state.songs
+    .filter((s) => s.tags.includes(oldName))
+    .map((s) => ({ id: s.id, data: { tags: [...new Set(s.tags.map((t) => (t === oldName ? n : t)))] } }));
+  if (entries.length) state.store.putSongs(entries);
+  replaceTagInConditions(oldName, n);
+  toast(`「${oldName}」を「${n}」に変えました${entries.length ? `（${entries.length}曲）` : ''}`);
+}
+
+async function deleteTag(name) {
+  const count = tagCounts(state.songs).get(name) ?? 0;
+  const ok = await confirmDialog({
+    title: `タグ「${name}」を削除しますか？`,
+    message: count ? `付いている ${count}曲 からも外れます。曲そのものは削除されません。` : '',
+    ok: '削除する',
+    danger: true,
+  });
+  if (!ok) return;
+  const next = tagList().filter((t) => t !== name);
+  state.profile.tags = next;
+  state.store.updateProfile({ tags: next });
+  const entries = state.songs.filter((s) => s.tags.includes(name)).map((s) => ({ id: s.id, data: { tags: s.tags.filter((t) => t !== name) } }));
+  if (entries.length) state.store.putSongs(entries);
+  replaceTagInConditions(name, null);
+  toast(`タグ「${name}」を削除しました`);
+}
+
+function moveTag(name, dir) {
+  const list = tagList();
+  const i = list.indexOf(name);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  state.profile.tags = list;
+  state.store.updateProfile({ tags: list });
+  paintTagManager();
+}
+
+async function askNewTag() {
+  const name = await promptDialog({ title: '新しいタグ', placeholder: '例：盛り上がる曲', ok: '追加', maxLength: 20 });
+  if (!name) return null;
+  ensureTags([name]);
+  return name;
+}
+
+function openTagManager() {
+  if (state.tagSheet) return;
+  const sheet = openSheet(`<div class="tags-mgr">
+      <div class="sheet-head"><h3>タグの管理</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+      <div class="sheet-body">
+        <p class="hint">作ったタグは、曲の登録・詳細画面、一覧の絞り込み、ランダム選曲で使えます。名前を変えると、付いている曲すべてに反映されます。</p>
+        <form class="tag-new" data-role="new-form">
+          <input class="input" data-role="new" placeholder="新しいタグ" maxlength="20" enterkeyhint="done" autocomplete="off" aria-label="新しいタグ">
+          <button type="submit" class="btn">追加</button>
+        </form>
+        <ul class="tag-list" data-role="list"></ul>
+      </div>
+    </div>`, {
+    label: 'タグの管理',
+    onClose: () => { state.tagSheet = null; },
+  });
+  state.tagSheet = sheet;
+  $('[data-role="new-form"]', sheet.el).addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = $('[data-role="new"]', sheet.el);
+    const name = input.value.trim();
+    if (!name) return;
+    if (tagList().includes(name)) toast(`「${name}」はすでにあります`);
+    else ensureTags([name]);
+    input.value = '';
+    paintTagManager();
+  });
+  sheet.el.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const name = b.closest('[data-tag-row]')?.dataset.tagRow;
+    switch (b.dataset.act) {
+      case 'close': sheet.close(); break;
+      case 'up': moveTag(name, -1); break;
+      case 'down': moveTag(name, 1); break;
+      case 'rename': {
+        const n = await promptDialog({ title: 'タグの名前を変える', value: name, ok: '変更', maxLength: 20 });
+        if (n) renameTag(name, n);
+        break;
+      }
+      case 'delete': await deleteTag(name); break;
+      default:
+    }
+    paintTagManager();
+  });
+  paintTagManager();
+}
+
+function paintTagManager() {
+  const sheet = state.tagSheet;
+  if (!sheet) return;
+  const list = tagList();
+  const counts = tagCounts(state.songs);
+  $('[data-role="list"]', sheet.el).innerHTML = list.length
+    ? list.map((t, i) => `<li class="tag-row" data-tag-row="${esc(t)}">
+        <span class="tag-name">${esc(t)}</span>
+        <span class="tag-count">${counts.get(t) ?? 0}曲</span>
+        <button type="button" class="icon-btn sm" data-act="up" aria-label="上へ"${i === 0 ? ' disabled' : ''}>${icon('arrow-up')}</button>
+        <button type="button" class="icon-btn sm" data-act="down" aria-label="下へ"${i === list.length - 1 ? ' disabled' : ''}>${icon('arrow-down')}</button>
+        <button type="button" class="icon-btn sm" data-act="rename" aria-label="名前を変える">${icon('pen')}</button>
+        <button type="button" class="icon-btn sm" data-act="delete" aria-label="削除">${icon('trash')}</button>
+      </li>`).join('')
+    : '<li class="al-empty">まだタグがありません</li>';
+}
+
+// ---- 一覧で複数選択 ---------------------------------------------------
+
+const selectedSongs = () => [...state.select.ids].map((id) => state.byId.get(id)).filter(Boolean);
+
+function setSelectMode(on) {
+  state.select.on = on;
+  if (!on) state.select.ids.clear();
+  $('#app').classList.toggle('selecting', on);
+  $('#selbar').hidden = !on;
+  $('#btn-select').setAttribute('aria-pressed', String(on));
+  closePopover();
+  render();
+  paintSelbar();
+}
+
+function toggleSelect(id) {
+  const ids = state.select.ids;
+  if (ids.has(id)) ids.delete(id);
+  else ids.add(id);
+  items.get(id)?.el.classList.toggle('selected', ids.has(id));
+  paintSelbar();
+}
+
+function paintSelbar() {
+  if (!state.select.on) return;
+  for (const id of [...state.select.ids]) if (!state.byId.has(id)) state.select.ids.delete(id);
+  const n = state.select.ids.size;
+  $('#sel-count').textContent = `${n}曲を選択中`;
+  $$('#selbar .selbar-actions .btn').forEach((b) => { b.disabled = !n; });
+  paintBulkTags();
+}
+
+async function onSelbarClick(e) {
+  const a = e.target.closest('[data-sel]')?.dataset.sel;
+  if (!a) return;
+  const sel = selectedSongs();
+  if (a === 'done') setSelectMode(false);
+  else if (a === 'all') {
+    state.visible.forEach((s) => state.select.ids.add(s.id));
+    render();
+    paintSelbar();
+  } else if (a === 'tag') openBulkTags();
+  else if (a === 'fav') {
+    const allFav = sel.every((s) => s.favorite);
+    state.store.putSongs(sel.map((s) => ({ id: s.id, data: { favorite: !allFav } })));
+    toast(allFav ? `${sel.length}曲をお気に入りから外しました` : `${sel.length}曲をお気に入りにしました`);
+  } else if (a === 'delete') {
+    const ok = await confirmDialog({
+      title: `${sel.length}曲を削除しますか？`,
+      message: `${sel.slice(0, 3).map((s) => s.title).join('、')}${sel.length > 3 ? ' など' : ''}\n削除すると元に戻せません。`,
+      ok: '削除する',
+      danger: true,
+    });
+    if (!ok) return;
+    state.store.putSongs([], sel.map((s) => s.id));
+    setSelectMode(false);
+    toast(`${sel.length}曲を削除しました`);
+  }
+}
+
+// 選んだ曲にまとめてタグを付け外しする。タップするたびにすぐ反映する
+function openBulkTags() {
+  if (state.bulkSheet) return;
+  const sheet = openSheet(`<div class="bulk-tags">
+      <div class="sheet-head"><h3>タグを付ける・外す</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+      <div class="sheet-body">
+        <p class="hint bulk-note" data-role="note"></p>
+        <div class="chip-set" data-role="chips"></div>
+      </div>
+    </div>`, {
+    label: 'タグを付ける・外す',
+    onClose: () => { state.bulkSheet = null; },
+  });
+  state.bulkSheet = sheet;
+  sheet.el.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.act === 'close') {
+      sheet.close();
+      return;
+    }
+    let tag = b.dataset.btag;
+    if (b.dataset.act === 'new') tag = await askNewTag();
+    if (!tag) return;
+    const sel = selectedSongs();
+    const all = sel.every((s) => s.tags.includes(tag));
+    const remove = all && b.dataset.act !== 'new';
+    state.store.putSongs(sel.map((s) => ({
+      id: s.id,
+      data: { tags: remove ? s.tags.filter((t) => t !== tag) : [...new Set([...s.tags, tag])] },
+    })));
+    toast(remove ? `${sel.length}曲から「${tag}」を外しました` : `${sel.length}曲に「${tag}」を付けました`);
+  });
+  paintBulkTags();
+}
+
+function paintBulkTags() {
+  const sheet = state.bulkSheet;
+  if (!sheet) return;
+  const sel = selectedSongs();
+  $('[data-role="note"]', sheet.el).textContent = `選んだ ${sel.length}曲 に対して、タップでタグを付けたり外したりします。点線のタグは、一部の曲にだけ付いています。`;
+  $('[data-role="chips"]', sheet.el).innerHTML = tagList().map((t) => {
+    const n = sel.filter((s) => s.tags.includes(t)).length;
+    const cls = n && n === sel.length ? ' on' : n ? ' partial' : '';
+    return `<button type="button" class="chip${cls}" data-btag="${esc(t)}" aria-pressed="${n === sel.length && n > 0}">${esc(t)}</button>`;
+  }).join('') + `<button type="button" class="chip add" data-act="new">${icon('plus')}新しいタグ</button>`;
 }
 
 // ---- CSV --------------------------------------------------------------

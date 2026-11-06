@@ -198,11 +198,45 @@ export function artistCounts(songs) {
   return m;
 }
 
-export function allTags(songs) {
-  const set = new Set(PRESET_TAGS);
-  for (const s of songs) for (const t of s.tags) set.add(t);
-  const rest = [...set].filter((t) => !PRESET_TAGS.includes(t)).sort(collator.compare);
-  return [...PRESET_TAGS, ...rest];
+// タグの一覧。設定で並べたタグ（まだなければ最初から用意しているタグ）を先に、
+// 曲にだけ付いているタグをそのあとに名前順で並べる
+export function allTags(songs, ordered = null) {
+  const base = Array.isArray(ordered) ? ordered : PRESET_TAGS;
+  const set = new Set(base);
+  const rest = new Set();
+  for (const s of songs) for (const t of s.tags) if (!set.has(t)) rest.add(t);
+  return [...base, ...[...rest].sort(collator.compare)];
+}
+
+export function tagCounts(songs) {
+  const m = new Map();
+  for (const s of songs) for (const t of s.tags) m.set(t, (m.get(t) ?? 0) + 1);
+  return m;
+}
+
+// ---- アカウント共通の表示設定 ----
+export const ACCENTS = [
+  { id: 'indigo', label: 'インディゴ', color: '#4f46e5' },
+  { id: 'violet', label: 'バイオレット', color: '#7c3aed' },
+  { id: 'pink', label: 'ピンク', color: '#db2777' },
+  { id: 'orange', label: 'オレンジ', color: '#ea580c' },
+  { id: 'green', label: 'グリーン', color: '#16a34a' },
+  { id: 'teal', label: 'ティール', color: '#0d9488' },
+];
+export const NOTE_STYLES = [
+  { id: 'karaoke', label: 'カラオケ表記' },
+  { id: 'both', label: '両方' },
+  { id: 'scientific', label: 'G4 形式' },
+];
+export const REC_MARGINS = [0, 1, 2, 3];
+
+export function sanitizePrefs(p) {
+  const o = p && typeof p === 'object' ? p : {};
+  return {
+    accent: ACCENTS.some((a) => a.id === o.accent) ? o.accent : 'indigo',
+    noteStyle: NOTE_STYLES.some((s) => s.id === o.noteStyle) ? o.noteStyle : 'karaoke',
+    recMargin: REC_MARGINS.includes(o.recMargin) ? o.recMargin : 0,
+  };
 }
 
 // アーティスト名の候補。前方一致を優先し、曲数の多い順。
