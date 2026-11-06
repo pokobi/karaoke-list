@@ -5,6 +5,7 @@ import { esc, icon, toast, confirmDialog } from './ui.js';
 import { describeKey, machineKey, formatKey } from './notes.js';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
+const SKIP_SEC = 5; // 戻る・進むボタンで動かす秒数
 export const FILE_ACCEPT = 'audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.oga,.opus';
 
 export function previewSupported() {
@@ -353,6 +354,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       if (!p.dragging) seek.value = dur ? String(Math.round((cur / dur) * 1000)) : '0';
       seek.style.setProperty('--pv-p', `${(Number(seek.value) / 10).toFixed(1)}%`);
     }
+    for (const b of el.querySelectorAll('.pv-skip')) b.disabled = !dur;
     const c = el.querySelector('[data-pv-time="cur"]');
     const d = el.querySelector('[data-pv-time="dur"]');
     if (c && !p.dragging) c.textContent = formatTime(cur);
@@ -447,6 +449,8 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
         p.retried = false;
         play();
       }
+    } else if (act === 'back' || act === 'fwd') {
+      skip(act === 'back' ? -SKIP_SEC : SKIP_SEC);
     } else if (act === 'src') {
       if (b.dataset.src === p.srcId) return;
       if (isOwner()) stop();
@@ -470,6 +474,14 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       const src = source();
       if (src?.pick) pickSource(src);
     }
+  }
+
+  // 再生位置を sec 秒動かす（止めているときも動かせる）。曲の頭と終わりで止める
+  function skip(sec) {
+    const a = engine.audio;
+    if (!isOwner() || !p.loaded || !a || !Number.isFinite(a.duration)) return;
+    a.currentTime = Math.min(Math.max(0, a.currentTime + sec), Math.max(0, a.duration - 0.05));
+    paintTime(a);
   }
 
   function onInput(e) {
@@ -564,7 +576,11 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       ? `<p class="pv-msg pv-oct">${icon('alert')}<span>${esc(kd.text)} のうち、${esc(kd.oct)}の分は試聴に入れず、${shift === 0 ? '原曲キー' : esc(formatKey(shift))}で再生します（大きく変えると音が歪むため）。</span></p>`
       : '';
     return `<div class="pv-player">
-        <button type="button" class="pv-play${playing ? ' on' : ''}" data-pv="toggle" aria-label="${playing ? '一時停止' : '再生'}">${icon(playing ? 'pause' : 'play')}</button>
+        <div class="pv-ctl">
+          <button type="button" class="pv-skip" data-pv="back" aria-label="5秒戻る" title="5秒戻る" disabled>${icon('back5')}</button>
+          <button type="button" class="pv-play${playing ? ' on' : ''}" data-pv="toggle" aria-label="${playing ? '一時停止' : '再生'}">${icon(playing ? 'pause' : 'play')}</button>
+          <button type="button" class="pv-skip" data-pv="fwd" aria-label="5秒進む" title="5秒進む" disabled>${icon('fwd5')}</button>
+        </div>
         <div class="pv-bar">
           <input type="range" class="pv-seek" min="0" max="1000" step="1" value="0" aria-label="再生位置" disabled>
           <div class="pv-time"><span data-pv-time="cur">0:00</span><span data-pv-time="dur">-:--</span></div>

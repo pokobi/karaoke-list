@@ -1067,6 +1067,11 @@ textarea.input { resize: vertical; min-height: 84px; }
 .pv-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .pv-head .label { margin: 0; }
 .pv-player { display: flex; align-items: center; gap: 12px; }
+.pv-ctl { flex: none; display: flex; align-items: center; gap: 2px; }
+.pv-skip { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); }
+.pv-skip .ic { width: 22px; height: 22px; }
+.pv-skip:not(:disabled):active { background: var(--surface-2); }
+.pv-skip:disabled { opacity: .35; }
 .pv-play { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); }
 .pv-play .ic { width: 22px; height: 22px; }
 .pv-play:active { background: var(--accent-2); }
