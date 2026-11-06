@@ -568,26 +568,28 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     const kd = describeKey(s.key, s.octave);
     const shift = playKey(s);
     const keyLabel = shift === 0 ? '' : `<div class="seg seg-sm pv-keys" role="group" aria-label="再生するキー">
-        <button type="button" data-pv="cur" aria-pressed="${!p.original}">今のキー（${esc(formatKey(shift))}）</button>
+        <button type="button" data-pv="cur" aria-pressed="${!p.original}">今のキー ${esc(formatKey(shift))}</button>
         <button type="button" data-pv="orig" aria-pressed="${p.original}">原曲キー</button>
       </div>`;
     // オク下・オク上のときは、その分を入れずに再生していることを書いておく
     const octNote = kd.oct && !p.original
       ? `<p class="pv-msg pv-oct">${icon('alert')}<span>${esc(kd.text)} のうち、${esc(kd.oct)}の分は試聴に入れず、${shift === 0 ? '原曲キー' : esc(formatKey(shift))}で再生します（大きく変えると音が歪むため）。</span></p>`
       : '';
-    return `<div class="pv-player">
+    // 1 行目：再生位置のバー（横いっぱい）。2 行目：戻る・再生・進むと、キーの切り替え（入りきらなければ次の行へ）
+    return `<div class="pv-bar">
+        <span class="pv-time" data-pv-time="cur">0:00</span>
+        <input type="range" class="pv-seek" min="0" max="1000" step="1" value="0" aria-label="再生位置" disabled>
+        <span class="pv-time" data-pv-time="dur">-:--</span>
+      </div>
+      <div class="pv-player">
         <div class="pv-ctl">
           <button type="button" class="pv-skip" data-pv="back" aria-label="5秒戻る" title="5秒戻る" disabled>${icon('back5')}</button>
           <button type="button" class="pv-play${playing ? ' on' : ''}" data-pv="toggle" aria-label="${playing ? '一時停止' : '再生'}">${icon(playing ? 'pause' : 'play')}</button>
           <button type="button" class="pv-skip" data-pv="fwd" aria-label="5秒進む" title="5秒進む" disabled>${icon('fwd5')}</button>
         </div>
-        <div class="pv-bar">
-          <input type="range" class="pv-seek" min="0" max="1000" step="1" value="0" aria-label="再生位置" disabled>
-          <div class="pv-time"><span data-pv-time="cur">0:00</span><span data-pv-time="dur">-:--</span></div>
-        </div>
+        ${keyLabel}
         ${volumeHTML()}
       </div>
-      ${keyLabel}
       ${octNote}
       ${p.message ?`<p class="pv-msg${p.status === 'error' ? ' err' : ''}">${esc(p.message)}</p>` : ''}
       ${sourceInfoHTML()}`;
