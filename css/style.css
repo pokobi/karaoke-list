@@ -1057,7 +1057,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .job-text { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .set-sec > .switch-row { margin-bottom: 8px; }
 /* 触覚フィードバックが全体でオフのときは、細かい設定を薄くする */
-.hap-sec.off .seg, .hap-sec.off .switch-row:has([data-hap]) { opacity: .45; }
+.hap-sec.off .switch-row:has([data-hap]) { opacity: .45; }
 .hap-sec.off .switch-row:has([data-hap]) { cursor: default; }
 
 /* 再生履歴から追加 */

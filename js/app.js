@@ -16,7 +16,7 @@ import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, ope
 import { createLocalStore } from './store-local.js';
 import { plugins } from './plugins.js';
 import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, hasRandomRange } from './random.js';
-import { HAPTIC_LEVELS, HAPTIC_EVENTS, HAPTIC_TYPES, sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
+import { HAPTIC_EVENTS, sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
 
 const VIEW_KEY = 'karaoke-list:view:v1';
 const HOLD_MS = 1400;
@@ -2116,7 +2116,7 @@ function openSettings() {
 }
 
 // 触覚フィードバックの設定（この端末）。指で操作する端末で、振動できるときだけ出す
-function hapticsSettingsHTML(seg) {
+function hapticsSettingsHTML() {
   const mode = hapticMode();
   if (!mode) return '';
   const hp = devicePrefs.haptics;
@@ -2124,13 +2124,6 @@ function hapticsSettingsHTML(seg) {
   return `<section class="set-sec hap-sec${hp.on ? '' : ' off'}">
         <h4>触覚フィードバック（この端末）</h4>
         <label class="switch-row"><span>操作したときに振動する</span><input type="checkbox" class="switch" data-role="hap-on"${hp.on ? ' checked' : ''}></label>
-        <span class="set-label">強さ</span>
-        ${seg('hap-level', HAPTIC_LEVELS.map((l) => [l.id, l.label]), hp.level).replace(/<button /g, `<button${off} `)}
-        ${mode === 'ios'
-          ? '<p class="hint">iPhone では振動の強さそのものは変えられないため、振動する回数（弱：1回、中：2回、強：3回）で強弱をつけます。選ぶと、試しに振動します。</p>'
-          : `<span class="set-label">振動の種類</span>
-        ${seg('hap-type', HAPTIC_TYPES.map((t) => [t.id, t.label]), hp.type).replace(/<button /g, `<button${off} `)}
-        <p class="hint">${HAPTIC_TYPES.map((t) => `${t.label}：${t.desc}`).join('、')}。「ポコッ」「ポコポコ」は、端末の触覚に近い、ごく短い振動です。種類や強さを選ぶと、試しに振動します。</p>`}
         <span class="set-label">振動する操作</span>
         ${HAPTIC_EVENTS.map((ev) => `<label class="switch-row"><span>${ev.label}</span><input type="checkbox" class="switch" data-hap="${ev.id}"${hp[ev.id] ? ' checked' : ''}${off}></label>`).join('')}
         <p class="hint">キーの変更は、±1・原キー・オク下・オク上・おすすめキーへの変更です。${mode === 'ios' ? 'iPhone では iOS 18 以降で、本体の「設定」→「サウンドと触覚」→「システムの触覚」がオンのときに振動します。' : ''}</p>
@@ -2163,7 +2156,7 @@ function paintSettings() {
         <label class="switch-row"><span>一覧のスワイプ操作</span><input type="checkbox" class="switch" data-role="swipe"${devicePrefs.swipe ? ' checked' : ''}></label>
         <p class="hint">曲の行を右へスワイプすると「歌った！」を記録し、左へスワイプするとお気に入りを切り替えます（スマホなど指で操作するときだけ）。</p>
       </section>
-      ${hapticsSettingsHTML(seg)}
+      ${hapticsSettingsHTML()}
       <section class="set-sec">
         <h4>表示（すべての端末で共通）</h4>
         <span class="set-label">アクセントカラー</span>
@@ -2235,11 +2228,6 @@ async function onSettingsClick(e) {
   }
   if (b.dataset.themeSet) return setDevicePref({ theme: b.dataset.themeSet });
   if (b.dataset.density) return setDevicePref({ density: b.dataset.density });
-  if (b.dataset.hapLevel || b.dataset.hapType) {
-    setHaptics(b.dataset.hapLevel ? { level: b.dataset.hapLevel } : { type: b.dataset.hapType });
-    playHaptic('test', devicePrefs.haptics);
-    return;
-  }
   if (b.dataset.accentSet) return updateAccountPrefs({ accent: b.dataset.accentSet });
   if (b.dataset.noteStyle) return updateAccountPrefs({ noteStyle: b.dataset.noteStyle });
   if (b.dataset.margin != null) return updateAccountPrefs({ recMargin: +b.dataset.margin });

@@ -1,37 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeHaptics, defaultHaptics, vibratePattern, swipePattern, tickCount, hapticMode, playHaptic, HAPTIC_TYPES } from '../js/haptics.js';
+import { sanitizeHaptics, defaultHaptics, vibratePattern, tickCount, hapticMode, playHaptic } from '../js/haptics.js';
 
 const coarse = (yes) => () => ({ matches: yes });
 
-test('触覚フィードバックの設定は、壊れた値を既定値に戻す', () => {
+test('触覚フィードバックの設定は、オン・オフだけを残し、壊れた値を既定値に戻す', () => {
   assert.deepEqual(sanitizeHaptics(), defaultHaptics());
-  assert.deepEqual(sanitizeHaptics({ on: false, level: 'strong', type: 'pop', key: false }), { on: false, level: 'strong', type: 'pop', key: false, sung: true, fav: true });
-  assert.equal(sanitizeHaptics({ level: 'max' }).level, 'medium');
-  assert.equal(sanitizeHaptics({ type: 'xiaomi' }).type, 'standard');
+  assert.deepEqual(sanitizeHaptics({ on: false, key: false }), { on: false, key: false, sung: true, fav: true });
+  // 以前の版で保存した強さ・種類は捨てる
+  assert.deepEqual(sanitizeHaptics({ level: 'strong', type: 'pop' }), defaultHaptics());
   assert.equal(sanitizeHaptics('x').on, true);
 });
 
-test('強いほど、Android では長く、iPhone では多く振動する', () => {
-  assert.ok(vibratePattern('tap', 'weak')[0] < vibratePattern('tap', 'medium')[0]);
-  assert.ok(vibratePattern('tap', 'medium')[0] < vibratePattern('tap', 'strong')[0]);
-  assert.equal(vibratePattern('success', 'medium').length, 3);
-  assert.deepEqual(['weak', 'medium', 'strong'].map((l) => tickCount('tap', l)), [1, 2, 3]);
-  assert.equal(tickCount('success', 'weak'), 2);
-});
-
-test('振動の種類：ポコッは標準より短く、ポコポコは短く 2 回', () => {
-  for (const level of ['weak', 'medium', 'strong']) {
-    for (const t of HAPTIC_TYPES) assert.ok(t.ms.weak <= t.ms[level], `${t.id} ${level}`);
-    assert.ok(vibratePattern('tap', level, 'pop')[0] < vibratePattern('tap', level, 'click')[0]);
-    assert.ok(vibratePattern('tap', level, 'click')[0] < vibratePattern('tap', level, 'standard')[0]);
-  }
-  assert.deepEqual(vibratePattern('tap', 'medium', 'double'), [6, 45, 6]);
-  assert.deepEqual(vibratePattern('success', 'medium', 'double'), [6, 45, 6, 90, 6, 45, 6]);
-  assert.deepEqual(vibratePattern('success', 'medium', 'pop'), [6, 70, 6]);
-  // 種類を指定しないときは標準（今までと同じ長さ）
-  assert.deepEqual(vibratePattern('tap', 'medium'), [22]);
-  assert.deepEqual(swipePattern('pop'), [4]);
+test('振動は弱で固定。「歌った！」だけ 2 回', () => {
+  assert.equal(vibratePattern('tap').length, 1);
+  assert.ok(vibratePattern('tap')[0] <= 12);
+  assert.equal(vibratePattern('success').length, 3);
+  assert.equal(tickCount('tap'), 1);
+  assert.equal(tickCount('success'), 2);
 });
 
 test('振動のしかたは端末で決める', () => {
@@ -68,24 +54,24 @@ test('設定でオフの操作や、全体がオフのときは振動しない',
   assert.equal(playHaptic('key', {}, { ...env, mode: null }), false);
   assert.equal(calls.vibrate.length, 0);
   assert.equal(playHaptic('fav', { key: false }, env), true);
-  assert.deepEqual(calls.vibrate, [vibratePattern('tap', 'medium')]);
+  assert.deepEqual(calls.vibrate, [vibratePattern('tap')]);
 });
 
-test('Android は強さに合わせた長さで振動する', () => {
+test('Android は操作に合わせた回数だけ短く振動する', () => {
   const { calls, env } = fakeEnv('vibrate');
-  playHaptic('sung', { level: 'strong' }, env);
-  playHaptic('swipe', { level: 'strong' }, env);
-  playHaptic('key', { level: 'weak', type: 'pop' }, env);
-  assert.deepEqual(calls.vibrate, [vibratePattern('success', 'strong'), swipePattern('standard'), [4]]);
+  playHaptic('sung', {}, env);
+  playHaptic('swipe', {}, env);
+  playHaptic('key', {}, env);
+  assert.deepEqual(calls.vibrate, [vibratePattern('success'), vibratePattern('tap'), vibratePattern('tap')]);
 });
 
-test('iPhone は強さに合わせた回数だけ鳴らし、スワイプの途中では鳴らさない', () => {
+test('iPhone は操作に合わせた回数だけ鳴らし、スワイプの途中では鳴らさない', () => {
   const { calls, env } = fakeEnv('ios');
-  playHaptic('key', { level: 'strong' }, env);
+  playHaptic('key', {}, env);
+  assert.equal(calls.ticks, 1);
+  playHaptic('sung', {}, env);
   assert.equal(calls.ticks, 3);
-  assert.equal(calls.later.length, 2);
+  assert.equal(calls.later.length, 1);
   assert.equal(playHaptic('swipe', {}, env), false);
   assert.equal(calls.ticks, 3);
-  playHaptic('test', { level: 'weak', key: false }, env);
-  assert.equal(calls.ticks, 4);
 });

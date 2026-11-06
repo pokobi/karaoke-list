@@ -1,14 +1,7 @@
-// 触覚フィードバック（スマホの振動）。
-// - Android など Vibration API がある端末：震える長さで強さを変える。
+// 触覚フィードバック（スマホの振動）。強さは「弱」で固定する。
+// - Android など Vibration API がある端末：短く震わせる。
 // - iPhone（Safari）：Vibration API がないため、iOS 18 以降でスイッチ（<input type="checkbox" switch>）を
-//   切り替えたときに出る「コッ」という触覚を借りる。強さは変えられないので、鳴らす回数で強弱をつける。
-//   操作（タップなど）の処理の中で呼んだときだけ振動する。
-
-export const HAPTIC_LEVELS = [
-  { id: 'weak', label: '弱' },
-  { id: 'medium', label: '中' },
-  { id: 'strong', label: '強' },
-];
+//   切り替えたときに出る「コッ」という触覚を借りる。操作（タップなど）の処理の中で呼んだときだけ振動する。
 
 // 設定で 1 つずつオン・オフできる操作
 export const HAPTIC_EVENTS = [
@@ -17,55 +10,32 @@ export const HAPTIC_EVENTS = [
   { id: 'fav', label: 'お気に入りの切り替え' },
 ];
 
-// 操作ごとの振動の種類。tap：1 回／success：記録できたことが分かるよう、少し多めに
-const KIND = { key: 'tap', fav: 'tap', sung: 'success', test: 'tap' };
+// 操作ごとの振動のしかた。tap：1 回／success：記録できたことが分かるよう 2 回
+const KIND = { key: 'tap', fav: 'tap', sung: 'success' };
 
-// Android の振動の種類。Web からは「何ミリ秒震わせるか」しか指定できないため、
-// ごく短く震わせて、端末の「ポコッ」とした触覚に近づける候補を用意する。
-// ms：強さ（弱・中・強）ごとの震える長さ（ミリ秒）、pulses：1 回の操作で震える回数
-export const HAPTIC_TYPES = [
-  { id: 'pop', label: 'ポコッ', desc: 'ごく短く 1 回', ms: { weak: 4, medium: 6, strong: 9 }, pulses: 1 },
-  { id: 'click', label: 'コツッ', desc: '短く 1 回', ms: { weak: 8, medium: 12, strong: 18 }, pulses: 1 },
-  { id: 'double', label: 'ポコポコ', desc: 'ごく短く 2 回', ms: { weak: 4, medium: 6, strong: 9 }, pulses: 2 },
-  { id: 'standard', label: '標準', desc: '長めに 1 回', ms: { weak: 10, medium: 22, strong: 40 }, pulses: 1 },
-];
-const typeOf = (id) => HAPTIC_TYPES.find((t) => t.id === id) ?? HAPTIC_TYPES.at(-1);
-
-// iPhone：鳴らす回数と間隔（ミリ秒）
-const TICKS = { weak: 1, medium: 2, strong: 3 };
+// Android：震える長さと、2 回震わせるときの間隔（ミリ秒）
+const TAP_MS = 10;
+const PULSE_GAP = 70;
+// iPhone：続けて鳴らすときの間隔（ミリ秒）
 const TICK_GAP = 110;
 
 export function defaultHaptics() {
-  return { on: true, level: 'medium', type: 'standard', key: true, sung: true, fav: true };
+  return { on: true, key: true, sung: true, fav: true };
 }
 
 export function sanitizeHaptics(raw) {
-  const d = defaultHaptics();
   const p = raw && typeof raw === 'object' ? raw : {};
-  const out = {
-    on: p.on !== false,
-    level: HAPTIC_LEVELS.some((l) => l.id === p.level) ? p.level : d.level,
-    type: HAPTIC_TYPES.some((t) => t.id === p.type) ? p.type : d.type,
-  };
+  const out = { on: p.on !== false };
   for (const ev of HAPTIC_EVENTS) out[ev.id] = p[ev.id] !== false;
   return out;
 }
 
-export function vibratePattern(kind, level, type = 'standard') {
-  const t = typeOf(type);
-  const ms = t.ms[level] ?? t.ms.medium;
-  const one = t.pulses === 2 ? [ms, 45, ms] : [ms];
-  return kind === 'success' ? [...one, t.pulses === 2 ? 90 : 70, ...one] : one;
+export function vibratePattern(kind) {
+  return kind === 'success' ? [TAP_MS, PULSE_GAP, TAP_MS] : [TAP_MS];
 }
 
-// スワイプが実行される位置を超えたとき：選んだ種類の「弱」で 1 回だけ
-export function swipePattern(type = 'standard') {
-  return [typeOf(type).ms.weak];
-}
-
-export function tickCount(kind, level) {
-  const n = TICKS[level] ?? TICKS.medium;
-  return kind === 'success' ? n + 1 : n;
+export function tickCount(kind) {
+  return kind === 'success' ? 2 : 1;
 }
 
 // この端末で使える振動のしかた。'ios'／'vibrate'／null（指で操作しない端末や、振動できない端末）
@@ -108,19 +78,20 @@ function browserEnv() {
   return env;
 }
 
-// event：HAPTIC_EVENTS の id、'test'（設定画面での試し）、'swipe'（スワイプが実行される位置を超えたとき）
+// event：HAPTIC_EVENTS の id、または 'swipe'（スワイプが実行される位置を超えたとき）
 export function playHaptic(event, prefs, e = browserEnv()) {
   const p = sanitizeHaptics(prefs);
   if (!p.on || !e.mode) return false;
   if (event in p && !p[event]) return false;
   try {
+    const kind = KIND[event] ?? 'tap';
     if (e.mode === 'vibrate') {
-      e.vibrate(event === 'swipe' ? swipePattern(p.type) : vibratePattern(KIND[event] ?? 'tap', p.level, p.type));
+      e.vibrate(vibratePattern(kind));
       return true;
     }
     // iPhone では、指を動かしている途中（スワイプ中）には鳴らせない
     if (event === 'swipe') return false;
-    const n = tickCount(KIND[event] ?? 'tap', p.level);
+    const n = tickCount(kind);
     e.tick();
     for (let i = 1; i < n; i++) e.later(e.tick, i * TICK_GAP);
     return true;
