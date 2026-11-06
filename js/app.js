@@ -17,6 +17,7 @@ import { createLocalStore } from './store-local.js';
 import { plugins } from './plugins.js';
 import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, hasRandomRange } from './random.js';
 import { HAPTIC_EVENTS, sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
+import { RANDOM_FX, sanitizeRandomFx, playRandomFx } from './random-fx.js';
 
 const VIEW_KEY = 'karaoke-list:view:v1';
 const HOLD_MS = 1400;
@@ -34,9 +35,10 @@ const devicePrefs = (() => {
       accent: typeof p.accent === 'string' ? p.accent : 'indigo',
       swipe: p.swipe !== false,
       haptics: sanitizeHaptics(p.haptics),
+      randomFx: sanitizeRandomFx(p.randomFx),
     };
   } catch {
-    return { theme: 'system', density: 'normal', accent: 'indigo', swipe: true, haptics: sanitizeHaptics() };
+    return { theme: 'system', density: 'normal', accent: 'indigo', swipe: true, haptics: sanitizeHaptics(), randomFx: sanitizeRandomFx() };
   }
 })();
 
@@ -973,10 +975,53 @@ function hasRandomCondition() {
 
 function reroll() {
   const r = state.random;
+  stopRandomFx();
   r.picks = pickRandom(randomPoolNow(), r.opts.count, { weighted: r.opts.preferLessSung, avoid: new Set(r.picks) }).map((s) => s.id);
   r.step = 'result';
   paintRandom();
   $('.sheet-body', r.sheet.el).scrollTop = 0;
+  startRandomFx();
+}
+
+// ---- 選んでいる途中の演出 ----
+
+function stopRandomFx() {
+  const r = state.random;
+  r.anim?.cancel();
+  r.anim = null;
+  r.animDirty = false;
+}
+
+function startRandomFx() {
+  const r = state.random;
+  const sheet = r.sheet;
+  const style = devicePrefs.randomFx;
+  if (!sheet || style === 'none' || !r.picks.length) return;
+  const box = $('[data-role="results"]', sheet.el);
+  const songs = r.picks.map((id) => state.byId.get(id)).filter(Boolean);
+  const single = songs.length === 1;
+  const targets = single
+    ? [{ item: $('.rnd-card', box), face: $('.rnd-main', box), song: songs[0] }]
+    : $$('.rnd-list > li', box).map((li, i) => ({ item: li, face: $('.rnd-row', li), song: songs[i] }));
+  if (!targets.length || targets.some((x) => !x.item || !x.face || !x.song)) return;
+  const pool = randomPoolNow();
+  const poolEl = $('[data-role="pool"]', sheet.el);
+  const doneText = poolEl.textContent;
+  poolEl.textContent = `条件に合う ${pool.length}曲 から選んでいます…`;
+  r.anim = playRandomFx(style, targets, {
+    pool,
+    render: single ? (s) => rndMainHTML(s) : (s, i) => rndRowHTML(s, i),
+    backHTML: icon('dice'),
+    onLand: () => haptic('random'),
+    onDone: () => {
+      poolEl.textContent = doneText;
+      // 演出中にデータが変わっていたら、ここで描き直す
+      if (r.animDirty) {
+        r.animDirty = false;
+        paintRandomResults(randomPoolNow().length);
+      }
+    },
+  });
 }
 
 // 条件の画面（step = 'cond'）と結果の画面（step = 'result'）を切り替えて描く
@@ -1022,7 +1067,10 @@ function openRandom() {
     </div>`, {
     label: 'ランダム選曲',
     className: 'random-layer',
-    onClose: () => { state.random.sheet = null; },
+    onClose: () => {
+      stopRandomFx();
+      state.random.sheet = null;
+    },
   });
   state.random.sheet = sheet;
   state.random.picks = [];
@@ -1069,10 +1117,23 @@ function randomRec(s) {
   return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b> にする</button>`;
 }
 
+const rndMainHTML = (s) => `${randomArt(s, 'rnd-art')}
+  <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span></span>`;
+
+const rndRowHTML = (s, i) => `<span class="rnd-no">${i + 1}</span>
+  ${randomArt(s, 'rnd-art sm')}
+  <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span><span class="rnd-range">${rangeText(s)}</span></span>
+  <span class="rnd-key" data-tone="${keyTone(describeKey(s.key, s.octave).machine)}">${describeKey(s.key, s.octave).text}</span>`;
+
 function paintRandomResults(poolSize) {
   const r = state.random;
   const sheet = r.sheet;
   if (!sheet) return;
+  // 演出の途中は描き直さない（終わってから描き直す）
+  if (r.anim?.active) {
+    r.animDirty = true;
+    return;
+  }
   $('[data-role="pool"]', sheet.el).textContent = poolSize ? `条件に合う ${poolSize}曲 から選びました` : '';
   const picks = r.picks.map((id) => state.byId.get(id)).filter(Boolean);
   const box = $('[data-role="results"]', sheet.el);
@@ -1084,10 +1145,7 @@ function paintRandomResults(poolSize) {
   } else if (picks.length === 1) {
     const s = picks[0];
     box.innerHTML = `<div class="rnd-card">
-      <button type="button" class="rnd-main" data-open="${esc(s.id)}">
-        ${randomArt(s, 'rnd-art')}
-        <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span></span>
-      </button>
+      <button type="button" class="rnd-main" data-open="${esc(s.id)}">${rndMainHTML(s)}</button>
       <div class="rnd-info"><span class="rnd-key" data-tone="${keyTone(describeKey(s.key, s.octave).machine)}">キー ${randomKeyText(s)}</span><span class="rnd-range">${rangeText(s)}</span></div>
       ${randomRec(s)}
       <div class="rnd-actions">
@@ -1097,12 +1155,7 @@ function paintRandomResults(poolSize) {
     </div>`;
   } else {
     box.innerHTML = `<ol class="rnd-list">${picks.map((s, i) => `<li>
-      <button type="button" class="rnd-row" data-open="${esc(s.id)}">
-        <span class="rnd-no">${i + 1}</span>
-        ${randomArt(s, 'rnd-art sm')}
-        <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span><span class="rnd-range">${rangeText(s)}</span></span>
-        <span class="rnd-key" data-tone="${keyTone(describeKey(s.key, s.octave).machine)}">${describeKey(s.key, s.octave).text}</span>
-      </button>
+      <button type="button" class="rnd-row" data-open="${esc(s.id)}">${rndRowHTML(s, i)}</button>
       ${randomRec(s)}
     </li>`).join('')}</ol>`;
   }
@@ -1188,6 +1241,11 @@ function paintArtistChips() {
 async function onRandomClick(e) {
   const b = e.target.closest('button');
   const r = state.random;
+  if (r.anim?.active && !e.target.closest('[data-act="close"]')) {
+    e.preventDefault();
+    r.anim.finish();
+    return;
+  }
   if (!b || !r.sheet) return;
   const o = r.opts;
   if (b.dataset.count) {
@@ -1227,6 +1285,7 @@ async function onRandomClick(e) {
       case 'draw':
       case 'reroll': reroll(); break;
       case 'cond':
+        stopRandomFx();
         r.step = 'cond';
         paintRandomConditions();
         paintRandom();
@@ -2155,6 +2214,9 @@ function paintSettings() {
         <label class="switch-row"><span>一覧にジャケット画像を表示</span><input type="checkbox" class="switch" data-role="show-art"${state.view.showArt ? ' checked' : ''}></label>
         <label class="switch-row"><span>一覧のスワイプ操作</span><input type="checkbox" class="switch" data-role="swipe"${devicePrefs.swipe ? ' checked' : ''}></label>
         <p class="hint">曲の行を右へスワイプすると「歌った！」を記録し、左へスワイプするとお気に入りを切り替えます（スマホなど指で操作するときだけ）。</p>
+        <span class="set-label">ランダム選曲の演出</span>
+        ${seg('random-fx', RANDOM_FX.map((f) => [f.id, f.label]), devicePrefs.randomFx)}
+        <p class="hint">曲を選ぶときの演出です。演出の途中で画面をタップすると、すぐに結果を表示します。</p>
       </section>
       ${hapticsSettingsHTML()}
       <section class="set-sec">
@@ -2228,6 +2290,7 @@ async function onSettingsClick(e) {
   }
   if (b.dataset.themeSet) return setDevicePref({ theme: b.dataset.themeSet });
   if (b.dataset.density) return setDevicePref({ density: b.dataset.density });
+  if (b.dataset.randomFx) return setDevicePref({ randomFx: b.dataset.randomFx });
   if (b.dataset.accentSet) return updateAccountPrefs({ accent: b.dataset.accentSet });
   if (b.dataset.noteStyle) return updateAccountPrefs({ noteStyle: b.dataset.noteStyle });
   if (b.dataset.margin != null) return updateAccountPrefs({ recMargin: +b.dataset.margin });

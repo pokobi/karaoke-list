@@ -6,7 +6,7 @@ const coarse = (yes) => () => ({ matches: yes });
 
 test('触覚フィードバックの設定は、オン・オフだけを残し、壊れた値を既定値に戻す', () => {
   assert.deepEqual(sanitizeHaptics(), defaultHaptics());
-  assert.deepEqual(sanitizeHaptics({ on: false, key: false }), { on: false, key: false, sung: true, fav: true });
+  assert.deepEqual(sanitizeHaptics({ on: false, key: false }), { on: false, key: false, sung: true, fav: true, random: true });
   // 以前の版で保存した強さ・種類は捨てる
   assert.deepEqual(sanitizeHaptics({ level: 'strong', type: 'pop' }), defaultHaptics());
   assert.equal(sanitizeHaptics('x').on, true);

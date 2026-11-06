@@ -8,10 +8,11 @@ export const HAPTIC_EVENTS = [
   { id: 'key', label: 'キーの変更' },
   { id: 'sung', label: '「歌った！」の記録' },
   { id: 'fav', label: 'お気に入りの切り替え' },
+  { id: 'random', label: 'ランダム選曲（曲が決まったとき）' },
 ];
 
 // 操作ごとの振動のしかた。tap：1 回／success：記録できたことが分かるよう 2 回
-const KIND = { key: 'tap', fav: 'tap', sung: 'success' };
+const KIND = { key: 'tap', fav: 'tap', sung: 'success', random: 'tap' };
 
 // Android：震える長さと、2 回震わせるときの間隔（ミリ秒）
 const TAP_MS = 10;
@@ -20,7 +21,7 @@ const PULSE_GAP = 70;
 const TICK_GAP = 110;
 
 export function defaultHaptics() {
-  return { on: true, key: true, sung: true, fav: true };
+  return { on: true, key: true, sung: true, fav: true, random: true };
 }
 
 export function sanitizeHaptics(raw) {
