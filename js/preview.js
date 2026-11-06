@@ -2,7 +2,7 @@
 // 音源は、この端末に保存した音楽ファイルと、追加機能（plugins.js）が用意したもの。
 // 音楽ファイルはこの端末の中（IndexedDB）にだけ保存し、ほかの端末には同期しない。
 import { esc, icon, toast, confirmDialog } from './ui.js';
-import { describeKey } from './notes.js';
+import { describeKey, machineKey, formatKey } from './notes.js';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
 const FILE_ACCEPT = 'audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.oga,.opus';
@@ -217,7 +217,9 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
 
   const isOwner = () => engine.owner === api;
   const source = () => sources.find((s) => s.id === p.srcId) ?? null;
-  const semitones = () => (p.original ? 0 : (getSong()?.key ?? 0));
+  // 再生するキー。オク下・オク上の分（±12）は入れず、カラオケ機で設定するキーだけ動かす（大きく動かすと音が歪むため）
+  const playKey = (s) => (s ? machineKey(s.key ?? 0, s.octave) : 0);
+  const semitones = () => (p.original ? 0 : playKey(getSong()));
 
   audioFiles.get(id).then((rec) => {
     if (p.destroyed) return;
@@ -551,10 +553,15 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     }
     const playing = isOwner() && (p.status === 'playing' || p.status === 'loading');
     const kd = describeKey(s.key, s.octave);
-    const keyLabel = s.key === 0 ? '' : `<div class="seg seg-sm pv-keys" role="group" aria-label="再生するキー">
-        <button type="button" data-pv="cur" aria-pressed="${!p.original}">今のキー（${esc(kd.text)}）</button>
+    const shift = playKey(s);
+    const keyLabel = shift === 0 ? '' : `<div class="seg seg-sm pv-keys" role="group" aria-label="再生するキー">
+        <button type="button" data-pv="cur" aria-pressed="${!p.original}">今のキー（${esc(formatKey(shift))}）</button>
         <button type="button" data-pv="orig" aria-pressed="${p.original}">原曲キー</button>
       </div>`;
+    // オク下・オク上のときは、その分を入れずに再生していることを書いておく
+    const octNote = kd.oct && !p.original
+      ? `<p class="pv-msg pv-oct">${icon('alert')}<span>${esc(kd.text)} のうち、${esc(kd.oct)}の分は試聴に入れず、${shift === 0 ? '原曲キー' : esc(formatKey(shift))}で再生します（大きく変えると音が歪むため）。</span></p>`
+      : '';
     return `<div class="pv-player">
         <button type="button" class="pv-play${playing ? ' on' : ''}" data-pv="toggle" aria-label="${playing ? '一時停止' : '再生'}">${icon(playing ? 'pause' : 'play')}</button>
         <div class="pv-bar">
@@ -564,7 +571,8 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
         ${volumeHTML()}
       </div>
       ${keyLabel}
-      ${p.message ? `<p class="pv-msg${p.status === 'error' ? ' err' : ''}">${esc(p.message)}</p>` : ''}
+      ${octNote}
+      ${p.message ?`<p class="pv-msg${p.status === 'error' ? ' err' : ''}">${esc(p.message)}</p>` : ''}
       ${sourceInfoHTML()}`;
   }
 
