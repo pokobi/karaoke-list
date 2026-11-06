@@ -69,7 +69,40 @@ export function formatTime(sec) {
 
 // ---- 再生のしくみ（1 つだけ作って使い回す） -------------------------------
 
-const engine = { ctx: null, audio: null, node: null, ready: null, owner: null, unlocked: false };
+const engine = { ctx: null, audio: null, node: null, gain: null, ready: null, owner: null, unlocked: false };
+
+// ---- 音量（PC など、マウスで操作する端末で表示する。この端末に保存する） ----------
+
+const VOLUME_KEY = 'karaoke-list:preview-volume:v1';
+const volume = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(VOLUME_KEY)) || {};
+    const level = Number(v.level);
+    return { level: Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 1, muted: v.muted === true };
+  } catch {
+    return { level: 1, muted: false };
+  }
+})();
+
+// 音量つまみの位置（0〜1）から、音の大きさの倍率へ。耳の感じ方に近づけるため 2 乗する
+export function volumeGain({ level, muted }) {
+  return muted ? 0 : Math.min(1, Math.max(0, level)) ** 2;
+}
+
+function applyVolume() {
+  const g = engine.gain?.gain;
+  if (!g) return;
+  const v = volumeGain(volume);
+  // 急に変えると「プツッ」と鳴るので、少しだけなめらかに変える
+  g.cancelScheduledValues(engine.ctx.currentTime);
+  g.setTargetAtTime(v, engine.ctx.currentTime, 0.015);
+}
+
+function saveVolume() {
+  try {
+    localStorage.setItem(VOLUME_KEY, JSON.stringify(volume));
+  } catch { /* 保存できなくても再生はできる */ }
+}
 
 // 一瞬だけの無音（iPhone で、タップの中で 1 回再生しておくと、あとから再生できるようになる）
 function silentUrl() {
@@ -114,8 +147,11 @@ function prepare() {
         channelCountMode: 'explicit',
         channelInterpretation: 'speakers',
       });
-      engine.ctx.createMediaElementSource(a).connect(node).connect(engine.ctx.destination);
+      const gain = engine.ctx.createGain();
+      gain.gain.value = volumeGain(volume);
+      engine.ctx.createMediaElementSource(a).connect(node).connect(gain).connect(engine.ctx.destination);
       engine.node = node;
+      engine.gain = gain;
     })();
     engine.ready.catch(() => {});
   }
@@ -408,6 +444,12 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       p.original = act === 'orig';
       if (isOwner()) setShift(semitones());
       paint();
+    } else if (act === 'mute') {
+      volume.muted = !volume.muted;
+      if (!volume.muted && volume.level === 0) volume.level = 0.5;
+      applyVolume();
+      saveVolume();
+      paintVolume();
     } else if (act === 'pick') pickFile();
     else if (act === 'remove') removeFile();
     else if (act === 'pick-src') {
@@ -417,6 +459,14 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
   }
 
   function onInput(e) {
+    if (e.target.classList.contains('pv-vol-range')) {
+      volume.level = Number(e.target.value) / 100;
+      if (volume.level > 0) volume.muted = false;
+      applyVolume();
+      if (e.type === 'change') saveVolume();
+      paintVolume(e.target);
+      return;
+    }
     if (!e.target.classList.contains('pv-seek')) return;
     p.dragging = true;
     const a = engine.audio;
@@ -428,6 +478,30 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       p.dragging = false;
       if (dur) a.currentTime = (Number(e.target.value) / 1000) * dur;
     }
+  }
+
+  function volumeHTML() {
+    const off = volume.muted || volume.level === 0;
+    const pct = Math.round(volume.level * 100);
+    return `<div class="pv-vol">
+        <button type="button" class="pv-mute" data-pv="mute" aria-pressed="${volume.muted}" aria-label="${volume.muted ? '消音を解除' : '消音'}" title="${volume.muted ? '消音を解除' : '消音'}">${icon(off ? 'volume-off' : 'volume')}</button>
+        <input type="range" class="pv-vol-range" min="0" max="100" step="1" value="${volume.muted ? 0 : pct}" aria-label="音量" style="--pv-p:${volume.muted ? 0 : pct}%">
+      </div>`;
+  }
+
+  // 音量の表示だけを描き直す（つまみを動かしている最中は、つまみ自体は描き直さない）
+  function paintVolume(range = null) {
+    const box = p.el?.querySelector('.pv-vol');
+    if (!box) return;
+    if (range) {
+      range.style.setProperty('--pv-p', `${range.value}%`);
+      const btn = box.querySelector('.pv-mute');
+      const off = volume.muted || volume.level === 0;
+      btn.innerHTML = icon(off ? 'volume-off' : 'volume');
+      btn.setAttribute('aria-pressed', String(volume.muted));
+      return;
+    }
+    box.outerHTML = volumeHTML();
   }
 
   function sourceInfoHTML() {
@@ -476,6 +550,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
           <input type="range" class="pv-seek" min="0" max="1000" step="1" value="0" aria-label="再生位置" disabled>
           <div class="pv-time"><span data-pv-time="cur">0:00</span><span data-pv-time="dur">-:--</span></div>
         </div>
+        ${volumeHTML()}
       </div>
       ${keyLabel}
       ${p.message ? `<p class="pv-msg${p.status === 'error' ? ' err' : ''}">${esc(p.message)}</p>` : ''}

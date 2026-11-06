@@ -1073,6 +1073,19 @@ textarea.input { resize: vertical; min-height: 84px; }
   cursor: pointer;
 }
 .pv-seek:disabled { cursor: default; }
+/* 音量（マウスで操作する端末だけ。スマホは本体のボタンで変える） */
+.pv-vol { display: none; flex: none; align-items: center; gap: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .pv-vol { display: flex; }
+}
+.pv-mute { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; color: var(--text-2); }
+.pv-mute:hover { background: var(--surface-2); }
+.pv-mute .ic { width: 19px; height: 19px; }
+.pv-vol-range { --pv-p: 100%; appearance: none; display: block; width: 84px; height: 22px; margin: 0; background: transparent; cursor: pointer; }
+.pv-vol-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--text-2) var(--pv-p), var(--surface-3) var(--pv-p)); }
+.pv-vol-range::-moz-range-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--text-2) var(--pv-p), var(--surface-3) var(--pv-p)); }
+.pv-vol-range::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: var(--text-2); border: 0; }
+.pv-vol-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--text-2); border: 0; }
 .pv-seek::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--pv-p), var(--surface-3) var(--pv-p)); }
 .pv-seek::-moz-range-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--pv-p), var(--surface-3) var(--pv-p)); }
 .pv-seek::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--accent); border: 0; }
