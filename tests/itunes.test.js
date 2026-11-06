@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { artworkUrl, toSong, uniqueArtists, sameArtist, pickSongs, bestMatch } from '../js/itunes.js';
+import { artworkUrl, toSong, uniqueArtists, sameArtist, pickSongs, bestMatch, trimReading } from '../js/itunes.js';
 
 const song = (artist, title, album = 'A', art = true) => toSong({
   wrapperType: 'track', kind: 'song', artistName: artist, trackName: title, collectionName: album,
@@ -45,4 +45,23 @@ test('ジャケット画像を自動で入れるのは、曲名とアーティ�
   assert.equal(bestMatch([song('LUMINA', 'つきあかり (TV Size)')], 'LUMINA', 'つきあかり').title, 'つきあかり (TV Size)');
   // 画像がない結果は使わない
   assert.equal(bestMatch([song('LUMINA', 'つきあかり', 'A', false)], 'LUMINA', 'つきあかり'), null);
+});
+
+test('日本語の曲名の後ろに付いた英語表記だけを外す', () => {
+  assert.equal(trimReading('さくら - Sakura'), 'さくら');
+  assert.equal(trimReading('夜明けのワルツ - Yoake no Waltz'), '夜明けのワルツ');
+  assert.equal(trimReading('白い街 – Shiroi Machi'), '白い街');
+  assert.equal(trimReading('花火の夜 (feat. ユイ) - Hanabi no Yoru'), '花火の夜 (feat. ユイ)');
+  // 英語だけの曲名は変えない
+  assert.equal(trimReading('Daybreak - Sunrise'), 'Daybreak - Sunrise');
+  assert.equal(trimReading('Starlight'), 'Starlight');
+  // ライブ版などの付記は残す
+  for (const t of ['さくら - Live', 'さくら - TV Size', 'さくら - From THE FIRST TAKE', 'さくら - Movie ver.', 'さくら - Acoustic Version', 'さくら - Instrumental', 'さくら - English Version', 'さくら - Remastered 2021']) {
+    assert.equal(trimReading(t), t);
+  }
+  // 後ろが英字だけでないもの・区切りに空白がないものは変えない
+  assert.equal(trimReading('さくら - 2021'), 'さくら - 2021');
+  assert.equal(trimReading('さくら - サクラ'), 'さくら - サクラ');
+  assert.equal(trimReading('さくら-Sakura'), 'さくら-Sakura');
+  assert.equal(trimReading(''), '');
 });

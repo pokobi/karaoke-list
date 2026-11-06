@@ -140,6 +140,22 @@ export function baseTitle(title) {
   return s.trim() || String(title ?? '').trim();
 }
 
+// 「さくら - Sakura」のように、日本語の曲名の後ろに付いた英語表記（読み方・英題）を外した曲名。
+// 外すのは、最後の「 - 」の前に日本語の文字があり、後ろが英字だけで、ライブ版などの付記ではないときだけ。
+// 英語だけの曲名や、付記（- Live、- TV Size、- From THE FIRST TAKE など）はそのまま返す。
+const JA_CHAR = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u;
+const LATIN_ONLY = /^[A-Za-z][A-Za-z0-9 '’.,!?&:]*$/;
+const VERSION_WORD = /\b(?:live|ver|version|mix|remix|edit|instrumental|inst|off|vocal|karaoke|acoustic|tv|size|short|full|cover|orchestra|from|feat|ft|with|single|album|remaster(?:ed)?|mono|stereo|demo|english|japanese|take|session|piano|unplugged|recorded|original|opening|ending|theme|ost|sped|slowed|radio|extended|bonus|anniversary|reprise|intro|outro|interlude|prod|movie|anime|game|band|solo|duet|chorus|part|pt)\b/i;
+export function trimReading(title) {
+  const t = String(title ?? '');
+  const m = /^(.*\S)\s+[-–—]\s+(.+)$/.exec(t.trim());
+  if (!m) return t;
+  const head = m[1].trim();
+  const tail = m[2].trim();
+  if (!JA_CHAR.test(head) || !LATIN_ONLY.test(tail) || VERSION_WORD.test(tail)) return t;
+  return head;
+}
+
 // アーティストの曲だけを残し、同じ曲の別バージョン（ライブ版・インスト版など）は 1 つにまとめる。
 // まとめるときは付記のない曲名を優先する。
 export function pickSongs(songs, artist, titleInput = '') {

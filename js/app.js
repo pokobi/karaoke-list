@@ -11,7 +11,7 @@ import {
 } from './model.js';
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
-import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, findTrack, waitForSlot, searchSongs } from './itunes.js';
+import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, findTrack, waitForSlot, searchSongs, trimReading } from './itunes.js';
 import {
   MAX_LINES, parseLines, analyzeLine, aliasMap, sanitizeAliases, scoreSongs, mergeCandidates, judge, fallbackTerms,
   guessSong, aliasToLearn, looseKey,
@@ -2088,7 +2088,7 @@ function setupTitleSuggest(input, list, getArtist, onPick) {
   const cb = combobox(input, list, {
     idPrefix: 'ac-title',
     onPick: (s) => {
-      input.value = s.title;
+      input.value = trimReading(s.title);
       input.blur();
       onPick?.(s);
     },
@@ -2097,10 +2097,11 @@ function setupTitleSuggest(input, list, getArtist, onPick) {
     const artist = getArtist().trim();
     const registered = new Set(state.songs.map(dupKey));
     return '<li class="ac-head" role="presentation">iTunes の候補</li>' + items.map((s, i) => {
-      const done = registered.has(dupKey({ artist, title: s.title }));
+      const title = trimReading(s.title);
+      const done = registered.has(dupKey({ artist, title }));
       return `<li role="option" id="${pre}-${i}" data-i="${i}" class="song-opt${i === active ? ' active' : ''}" aria-selected="${i === active}">
         <span class="ac-art">${s.artwork ? `<img src="${esc(s.artwork)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon('music')}</span>
-        <span class="ac-text"><span class="ac-name">${highlight(s.title, input.value)}</span>${s.album ? `<span class="ac-sub">${esc(s.album)}</span>` : ''}</span>
+        <span class="ac-text"><span class="ac-name">${highlight(title, input.value)}</span>${s.album ? `<span class="ac-sub">${esc(s.album)}</span>` : ''}</span>
         ${done ? '<span class="ac-count">登録済み</span>' : ''}</li>`;
     }).join('');
   };
@@ -2240,6 +2241,70 @@ async function runArtJob() {
   artJob.running = false;
   paintArtJob();
   toast(`${artJob.done}曲を調べて、${artJob.found}曲に画像を設定しました`, { duration: 5000 });
+}
+
+// ---- 曲名の英語表記 -----------------------------------------------------
+// 曲名の後ろに付いた英語表記（「さくら - Sakura」など）を外せる曲
+const readingTargets = () => state.songs.flatMap((s) => {
+  const to = trimReading(s.title);
+  return to !== s.title ? [{ id: s.id, artist: s.artist, from: s.title, to }] : [];
+});
+
+function readingSettingsHTML() {
+  const n = readingTargets().length;
+  if (!n) return '';
+  return `<section class="set-sec">
+        <h4>曲名の英語表記</h4>
+        <button type="button" class="btn wide" data-act="reading">${icon('pen')}曲名の英語表記を外す（${n}曲）</button>
+        <p class="hint">「さくら - Sakura」のように曲名の後ろに付いた英語表記を、一覧で確認してから外します。</p>
+      </section>`;
+}
+
+function openReadingCleanup() {
+  const targets = readingTargets();
+  if (!targets.length) return;
+  const registered = new Set(state.songs.map(dupKey));
+  // 外すと、登録済みのほかの曲と同じ曲名になるものは、最初はチェックを外しておく
+  const items = targets.map((x) => ({ ...x, dup: registered.has(dupKey({ artist: x.artist, title: x.to })) }));
+  const sheet = openSheet(`<div class="rdg">
+      <div class="sheet-head"><h3>曲名の英語表記を外す</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+      <div class="sheet-body">
+        <p class="hint">英語表記を外す曲にチェックを付けてください。英語表記も曲名の一部の場合は、チェックを外してください。</p>
+        <ul class="rdg-list">${items.map((x, i) => `<li><label class="rdg-row">
+            <input type="checkbox" data-i="${i}"${x.dup ? '' : ' checked'}>
+            <span class="rdg-text"><span class="rdg-to">${esc(x.to)}</span><span class="rdg-from">${esc(x.from)}${x.artist ? ` · ${esc(x.artist)}` : ''}</span>${x.dup ? '<span class="rdg-dup">外すと、登録済みの曲と同じ曲名になります</span>' : ''}</span>
+          </label></li>`).join('')}</ul>
+      </div>
+      <div class="sheet-foot"><button type="button" class="btn primary" data-act="apply"></button></div>
+    </div>`, { label: '曲名の英語表記を外す', className: 'history-layer' });
+  const btn = $('[data-act="apply"]', sheet.el);
+  const checked = () => $$('input[data-i]', sheet.el).filter((c) => c.checked).map((c) => items[+c.dataset.i]);
+  const paint = () => {
+    const n = checked().length;
+    btn.textContent = `外す（${n}曲）`;
+    btn.disabled = !n;
+  };
+  sheet.el.addEventListener('change', paint);
+  sheet.el.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.act === 'close') {
+      sheet.close();
+      return;
+    }
+    if (b.dataset.act !== 'apply') return;
+    // 一覧を開いたあとに曲名を変えた曲は変えない
+    const list = checked().filter((x) => state.byId.get(x.id)?.title === x.from);
+    for (const x of list) state.store.updateSong(x.id, { title: x.to });
+    sheet.close();
+    toast(`${list.length}曲の曲名から英語表記を外しました`);
+    // 音域が未入力の曲は、曲名が変わったのを待ってから、追加機能で音域を補う
+    const missing = list.filter((x) => isRangeMissing(state.byId.get(x.id) ?? {}));
+    if (!missing.length || !rangeBatches().length) return;
+    for (let t = 0; t < 30 && !missing.every((x) => state.byId.get(x.id)?.title === x.to); t++) await sleep(100);
+    runRangeBatch(missing.map((x) => ({ id: x.id, artist: x.artist, title: x.to })));
+  });
+  paint();
 }
 
 function rangeBatchSettingsHTML() {
@@ -2476,7 +2541,7 @@ function openTextImport() {
   const setPick = (r, s) => {
     r.pick = s;
     r.artist = s.artist;
-    r.title = s.title;
+    r.title = trimReading(s.title);
     r.artwork = s.artwork ?? null;
   };
 
@@ -2646,7 +2711,7 @@ function openTextImport() {
           const on = same(s, r.pick);
           return `<li><button type="button" class="hist-row ti-cand${on ? ' on' : ''}" data-k="${k}"${on ? ' aria-current="true"' : ''}>
               <span class="hist-art">${s.artwork ? `<img src="${esc(s.artwork)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon('music')}</span>
-              <span class="hist-text"><span class="hist-t">${esc(s.title)}</span><span class="hist-a">${esc(s.artist)}${s.album ? ` · ${esc(s.album)}` : ''}</span></span>
+              <span class="hist-text"><span class="hist-t">${esc(trimReading(s.title))}</span><span class="hist-a">${esc(s.artist)}${s.album ? ` · ${esc(s.album)}` : ''}</span></span>
               ${on ? icon('check') : ''}
             </button></li>`;
         }).join('')
@@ -2688,7 +2753,7 @@ function openTextImport() {
         $('#ti-title', sub.el).focus();
         return;
       }
-      const keep = r.pick && looseKey(r.pick.artist) === looseKey(artist) && looseKey(r.pick.title) === looseKey(title);
+      const keep = r.pick && looseKey(r.pick.artist) === looseKey(artist) && looseKey(trimReading(r.pick.title)) === looseKey(title);
       if (!keep) {
         r.pick = null;
         r.artwork = null;
@@ -2871,6 +2936,7 @@ function paintSettings() {
           <span class="row-r">${state.profile.artists.length}件${icon('chevron-right')}</span>
         </button>
       </section>
+      ${readingSettingsHTML()}
       ${rangeBatchSettingsHTML()}
       <section class="set-sec">
         <h4>ジャケット画像</h4>
@@ -2980,6 +3046,7 @@ async function onSettingsClick(e) {
       if (ok) runRangeBatch(targets.map((s) => ({ id: s.id, artist: s.artist, title: s.title })));
       break;
     }
+    case 'reading': openReadingCleanup(); break;
     case 'art-cancel': artJob.cancel = true; break;
     case 'history': $('#history-file').click(); break;
     case 'text-import': openTextImport(); break;
