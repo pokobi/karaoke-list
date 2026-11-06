@@ -1,5 +1,5 @@
-// Firebase を設定していないときに使う、この端末のブラウザだけに保存するストア。
-// Firebase 版（store-firebase.js）と同じ形の API を持つ。
+// ログインしていないときに使う、この端末のブラウザだけに保存するストア。
+// Firebase 版（store-firebase.js）と同じ形の API を持つ。切り替えは store.js で行う。
 
 const KEY = 'karaoke-list:local:v1';
 
@@ -44,12 +44,6 @@ export function createLocalStore() {
   const store = {
     mode: 'local',
     onWriteError: null,
-    onAuth(cb) {
-      queueMicrotask(() => cb({ uid: 'local', name: null, email: null, local: true }));
-      return () => {};
-    },
-    async signIn() {},
-    async signOut() {},
     subscribe(cb) {
       const l = { cb };
       listeners.add(l);
@@ -80,6 +74,7 @@ export function createLocalStore() {
         else data.songs.push({ ...payload, id: id ?? uid() });
       }
       commit();
+      return Promise.resolve(true);
     },
     updateProfile(patch) {
       data.profile = { ...data.profile, ...patch };
@@ -96,6 +91,21 @@ export function createLocalStore() {
     removeArtist(name) {
       data.profile = { ...data.profile, artists: (data.profile.artists ?? []).filter((n) => n !== name) };
       commit();
+    },
+    // 今のデータの写し（ログイン中に、この端末のデータを確かめるため）
+    peek() {
+      data = load();
+      return snapshot();
+    },
+    // すべて消す（アカウントへ移したあと）
+    clear() {
+      data = { songs: [], profile: {} };
+      try {
+        localStorage.removeItem(KEY);
+      } catch (e) {
+        store.onWriteError?.(e);
+      }
+      queueMicrotask(emit);
     },
   };
   return store;

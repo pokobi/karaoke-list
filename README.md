@@ -4,6 +4,7 @@
 
 ## 機能
 
+- ログインは任意。ログインしないときはこの端末のブラウザに保存し、Google アカウントでログインすると複数の端末で同じリストを使える。ログインする前に保存した曲は、ログインしたあとにアカウントへ移せる（同じアーティスト・曲名の曲は追加しない）。ログアウトすると、この端末のリストに戻る
 - 曲の登録・編集・削除（アーティスト、曲名、最低音・地声最高音・裏声最高音、キー）
 - 一覧からのキー変更（±1、原キー、オク下・オク上）。キーに合わせて音域の表示も変わる。オク下・オク上のときは、カラオケ機で設定するキーと実際のキーを分けて表示する
 - 自分の音域にもとづくおすすめキーの表示
@@ -25,8 +26,9 @@
 ## 構成
 
 - HTML / CSS / JavaScript（ビルドなし）
-- Firebase Authentication（Google ログイン）
-- Cloud Firestore（端末内キャッシュあり）
+- Firebase Authentication（Google ログイン。任意）
+- Cloud Firestore（ログインしたときの保存先。端末内キャッシュあり）
+- localStorage（ログインしていないときの保存先）
 - iTunes Search API（入力候補・ジャケット画像）
 - Web Audio API（AudioWorklet）による音の高さの変換（試聴のキー変更）
 - [fflate](https://github.com/101arrowz/fflate)（Takeout の ZIP の展開。ライセンスは `js/vendor/fflate.LICENSE`）
@@ -38,7 +40,7 @@
 3. Firestore Database を作成し、`firestore.rules` の内容をルールに設定する
 4. `js/config.js` の `FIREBASE_CONFIG` に firebaseConfig を設定する
 
-`FIREBASE_CONFIG` が `null` の場合は、ブラウザ内にだけ保存するローカルモードで動作する。
+`FIREBASE_CONFIG` が `null` の場合は、ログインの機能を使わず、ブラウザ内にだけ保存するローカルモードで動作する。
 
 ## 開発
 

@@ -265,11 +265,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .boot { min-height: 100dvh; display: grid; place-items: center; }
 .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--surface-3); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.login, .fatal { min-height: 100dvh; display: grid; place-items: center; padding: 24px 20px calc(24px + env(safe-area-inset-bottom)); }
-.login-card { width: 100%; max-width: 360px; display: flex; flex-direction: column; align-items: center; gap: 20px; text-align: center; }
-.login-icon { width: 72px; height: 72px; border-radius: 18px; box-shadow: var(--shadow-1); }
-.login-text { color: var(--text-2); font-size: 14.5px; line-height: 1.7; }
-.login-error { color: var(--danger); font-size: 13.5px; line-height: 1.6; }
+.fatal { min-height: 100dvh; display: grid; place-items: center; padding: 24px 20px calc(24px + env(safe-area-inset-bottom)); }
 .fatal { text-align: center; gap: 16px; align-content: center; color: var(--text-2); }
 
 /* ---- 全体の配置 -------------------------------------------------------- */
@@ -508,6 +504,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .empty-title { font-weight: 700; font-size: 16px; }
 .empty-text { color: var(--text-2); font-size: 13.5px; line-height: 1.7; max-width: 300px; }
 .empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+.empty-login { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
 
 .fab {
   position: fixed;
@@ -883,6 +880,8 @@ textarea.input { resize: vertical; min-height: 84px; }
 .btn-row .btn { padding: 0 10px; font-size: 14px; }
 .account { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .acc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 14px; }
+.acc-local { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 10px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--accent-weak); font-size: 13.5px; line-height: 1.6; }
+.acc-local .btn { flex: none; }
 .artist-list { list-style: none; margin: 0; padding: 0; }
 .artist-list li { display: flex; align-items: center; gap: 10px; min-height: 48px; border-bottom: 1px solid var(--line); }
 .artist-list li:last-child { border-bottom: 0; }

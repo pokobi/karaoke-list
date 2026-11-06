@@ -254,3 +254,56 @@ export function suggestArtists(names, songs, input, limit = 8) {
   });
   return items.slice(0, limit).map((x) => x.n);
 }
+
+// ---- ログインする前にこの端末に保存したデータを、アカウントへ移す ----
+
+const randomId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 20) : Math.random().toString(36).slice(2) + Date.now().toString(36));
+
+// 移す中身を決める。アカウントにある曲には手を加えず、同じアーティスト・曲名の曲は追加しない。
+// 曲の ID はそのまま使う（試聴の音楽ファイルが曲の ID で結び付いているため）。アカウントの曲と ID が重なるときだけ新しくする。
+// 音域・タグ・アーティスト名の候補・表示の設定は、アカウントにないものだけを足す。
+// 戻り値：add（[{ id, from, data }]）、skipped（追加しない曲 [{ from, to }]）、profile（updateProfile に渡す値）、artists（addArtists に渡す値）
+export function planLocalMove(local, account, newId = randomId) {
+  const accSongs = (account?.songs ?? []).map(normalizeSong);
+  const byKey = new Map(accSongs.map((s) => [dupKey(s), s]));
+  const ids = new Set(accSongs.map((s) => s.id));
+  const add = [];
+  const skipped = [];
+  for (const raw of local?.songs ?? []) {
+    const s = normalizeSong(raw);
+    const hit = byKey.get(dupKey(s));
+    if (hit) {
+      skipped.push({ from: s.id, to: hit.id });
+      continue;
+    }
+    let id = s.id;
+    if (typeof id !== 'string' || !id || id.includes('/') || ids.has(id)) id = newId();
+    ids.add(id);
+    add.push({ id, from: s.id, data: toPayload(s) });
+  }
+
+  const ap = account?.profile ?? {};
+  const lp = local?.profile ?? {};
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
+  const profile = {};
+  const ar = obj(ap.range) ?? {};
+  const lr = obj(lp.range) ?? {};
+  const range = { ...ar };
+  let rangeChanged = false;
+  for (const f of RANGE_FIELDS) {
+    if (isNote(lr[f.id]) && !isNote(ar[f.id])) {
+      range[f.id] = lr[f.id];
+      rangeChanged = true;
+    }
+  }
+  if (rangeChanged) profile.range = range;
+  if (Array.isArray(lp.tags)) {
+    const base = Array.isArray(ap.tags) ? ap.tags : PRESET_TAGS;
+    const extra = [...new Set(lp.tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim()))].filter((t) => !base.includes(t));
+    if (extra.length) profile.tags = [...base, ...extra];
+  }
+  if (!obj(ap.prefs) && obj(lp.prefs)) profile.prefs = sanitizePrefs(lp.prefs);
+  const have = new Set(Array.isArray(ap.artists) ? ap.artists : []);
+  const artists = [...new Set((Array.isArray(lp.artists) ? lp.artists : []).filter((n) => typeof n === 'string' && n && !have.has(n)))];
+  return { add, skipped, profile, artists };
+}

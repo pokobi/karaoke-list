@@ -6,7 +6,7 @@ import {
 import { collator, normalize } from './text.js';
 import {
   SORTS, emptySong, normalizeSong, toPayload, dupKey, sanitizeView, defaultView, applyView, hasRangeFilter,
-  artistCounts, allTags, suggestArtists, tagCounts, ACCENTS, NOTE_STYLES, REC_MARGINS, sanitizePrefs,
+  artistCounts, allTags, suggestArtists, tagCounts, ACCENTS, NOTE_STYLES, REC_MARGINS, sanitizePrefs, planLocalMove,
 } from './model.js';
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
@@ -14,6 +14,7 @@ import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, 
 import { readHistoryFile, aggregate, thumbnailUrl } from './history.js';
 import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, openPopover, closePopover, popoverAnchor, pickNote, promptDialog } from './ui.js';
 import { createLocalStore } from './store-local.js';
+import { createStore } from './store.js';
 import { plugins } from './plugins.js';
 import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, hasRandomRange } from './random.js';
 import { HAPTIC_EVENTS, sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
@@ -21,6 +22,8 @@ import { RANDOM_FX, sanitizeRandomFx, playRandomFx } from './random-fx.js';
 import { previewSupported, createPreview, audioFiles, formatBytes } from './preview.js';
 
 const VIEW_KEY = 'karaoke-list:view:v1';
+// ログインの操作をしたしるし（ページを移動してログインする場合に備えて、タブの中だけに残す）
+const MOVE_AFTER_LOGIN_KEY = 'karaoke-list:move-after-login';
 const HOLD_MS = 1400;
 const DEFAULT_OCTAVE = { low: 1, chestHigh: 2, falsettoHigh: 3 };
 const wide = matchMedia('(min-width: 1024px)');
@@ -56,6 +59,10 @@ const state = {
   store: null,
   user: null,
   unsub: null,
+  // ログインした直後に、この端末の曲をアカウントへ移すか聞く
+  moveAfterLogin: sessionFlag(MOVE_AFTER_LOGIN_KEY),
+  signingIn: false,
+  moving: false,
   loaded: false,
   songs: [],
   byId: new Map(),
@@ -75,6 +82,15 @@ const state = {
   tagSheet: null,
   bulkSheet: null,
 };
+
+function sessionFlag(key, value) {
+  try {
+    if (value === undefined) return sessionStorage.getItem(key) === '1';
+    if (value) sessionStorage.setItem(key, '1');
+    else sessionStorage.removeItem(key);
+  } catch { /* 使えなくても動く */ }
+  return !!value;
+}
 
 function loadView() {
   try {
@@ -124,19 +140,14 @@ async function boot() {
   applyDevicePrefs();
   registerServiceWorker();
   bindStatic();
-  try {
-    const forceLocal = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('local');
-    if (FIREBASE_CONFIG && !forceLocal) {
-      const { createFirebaseStore } = await import('./store-firebase.js');
-      state.store = await createFirebaseStore(FIREBASE_CONFIG);
-    } else {
-      state.store = createLocalStore();
-    }
-  } catch (e) {
-    console.error(e);
-    showFatal('データベースに接続できませんでした。通信状況を確認して、ページを再読み込みしてください。');
-    return;
-  }
+  // ログインは任意。ログインしていなければ、この端末のブラウザだけに保存する
+  const forceLocal = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('local');
+  state.store = createStore({
+    local: createLocalStore(),
+    loadRemote: FIREBASE_CONFIG && !forceLocal
+      ? async () => (await import('./store-firebase.js')).createFirebaseStore(FIREBASE_CONFIG)
+      : null,
+  });
   state.store.onWriteError = (e) => {
     console.error(e);
     const code = errorCode(e);
@@ -144,7 +155,10 @@ async function boot() {
       ? '保存できませんでした（権限エラー：permission-denied）'
       : `保存に失敗しました（${code}）`, { duration: 7000 });
   };
-  state.store.onAuth((user) => (user ? startSession(user) : showLogin()));
+  state.store.onAuth(startSession, (e) => {
+    console.error(e);
+    showFatal('データベースに接続できませんでした。通信状況を確認して、ページを再読み込みしてください。');
+  });
 }
 
 function registerServiceWorker() {
@@ -157,21 +171,10 @@ function registerServiceWorker() {
 
 function showFatal(msg) {
   $('#boot').hidden = true;
-  $('#login').hidden = true;
   $('#app').hidden = true;
   const el = $('#fatal');
   el.innerHTML = `<p>${esc(msg)}</p><button type="button" class="btn primary" onclick="location.reload()">再読み込み</button>`;
   el.hidden = false;
-}
-
-function showLogin() {
-  state.unsub?.();
-  state.unsub = null;
-  state.user = null;
-  state.loaded = false;
-  $('#boot').hidden = true;
-  $('#app').hidden = true;
-  $('#login').hidden = false;
 }
 
 function errorCode(e) {
@@ -184,7 +187,6 @@ function startSession(user) {
   state.loaded = false;
   state.loadError = null;
   $('#boot').hidden = true;
-  $('#login').hidden = true;
   $('#app').hidden = false;
   render();
   state.unsub = state.store.subscribe(onData, (e) => {
@@ -208,6 +210,7 @@ function onData({ songs, profile }) {
     prefs: sanitizePrefs(profile?.prefs),
   };
   applyAccountPrefs();
+  const first = !state.loaded;
   state.loaded = true;
   render();
   paintDetail();
@@ -217,6 +220,97 @@ function onData({ songs, profile }) {
   paintRandom();
   paintTagManager();
   paintSelbar();
+  if (first && !state.user?.local && state.moveAfterLogin) {
+    state.moveAfterLogin = sessionFlag(MOVE_AFTER_LOGIN_KEY, false);
+    offerLocalMove({ afterLogin: true });
+  }
+}
+
+// ---- ログインと、この端末のデータの移動 ---------------------------------
+
+async function signIn() {
+  if (state.signingIn) return;
+  state.signingIn = true;
+  paintSettings();
+  state.moveAfterLogin = sessionFlag(MOVE_AFTER_LOGIN_KEY, true);
+  try {
+    await state.store.signIn();
+  } catch (e) {
+    state.moveAfterLogin = sessionFlag(MOVE_AFTER_LOGIN_KEY, false);
+    if (['auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/user-cancelled'].includes(e?.code)) return;
+    console.error(e);
+    toast(e?.code === 'auth/unauthorized-domain'
+      ? 'このURLからのログインが許可されていません。Firebase の承認済みドメインを確認してください。'
+      : e?.code
+        ? `ログインできませんでした（${e.code}）`
+        : 'ログインできませんでした。通信状況を確認してください。', { duration: 7000 });
+  } finally {
+    state.signingIn = false;
+    paintSettings();
+  }
+}
+
+// ログインする前にこの端末に保存した曲を、アカウントへ移す（聞いてから）
+async function offerLocalMove({ afterLogin = false } = {}) {
+  if (state.user?.local || state.moving) return;
+  const local = state.store.localData();
+  const n = local.songs.length;
+  if (!n) return;
+  state.moving = true;
+  paintSettings();
+  try {
+    let account;
+    try {
+      account = await state.store.fetchAccount();
+    } catch (e) {
+      console.error(e);
+      toast('アカウントの曲を確かめられなかったため、この端末の曲はまだ移していません。設定の「アカウント」から移せます。', { duration: 7000 });
+      return;
+    }
+    if (state.user?.local) return;
+    const plan = planLocalMove(local, account);
+    const message = [
+      'ログインする前に、この端末に保存した曲です。アカウントにある曲は変わりません。',
+      plan.skipped.length ? `うち${plan.skipped.length}曲は、アカウントにある曲と同じアーティスト・曲名のため追加しません。` : '',
+      afterLogin ? '移さない場合はこの端末に残り、あとから設定の「アカウント」で移せます。' : '',
+    ].filter(Boolean).join('\n');
+    const ok = await choiceDialog({
+      title: `この端末の${n}曲をアカウントに移しますか？`,
+      message,
+      choices: [{ value: false, label: afterLogin ? 'あとで' : 'キャンセル' }, { value: true, label: '移す', kind: 'primary' }],
+    });
+    // 聞いている間にログアウトしたら、何もしない（端末のリストに書いてしまわないように）
+    if (!ok || state.user?.local) return;
+    const saved = state.store.putSongs(plan.add.map(({ id, data }) => ({ id, data })));
+    if (Object.keys(plan.profile).length) state.store.updateProfile(plan.profile);
+    if (plan.artists.length) state.store.addArtists(plan.artists);
+    toast(plan.add.length ? `${plan.add.length}曲をアカウントに移しました` : '移す曲はありませんでした（すべてアカウントにある曲でした）');
+    relinkAudioFiles(plan);
+    // サーバーに届いてから、この端末のリストを空にする（届く前に閉じても、次に移すときは同じ曲として扱う）
+    if (await saved) state.store.clearLocal();
+  } finally {
+    state.moving = false;
+    paintSettings();
+  }
+}
+
+// 試聴の音楽ファイルは曲の ID で結び付いているので、ID が変わる曲・追加しない曲のファイルを付け替える
+async function relinkAudioFiles(plan) {
+  if (!previewSupported()) return;
+  const moves = [
+    ...plan.add.filter((e) => e.id !== e.from).map((e) => ({ from: e.from, to: e.id })),
+    ...plan.skipped,
+  ];
+  for (const { from, to } of moves) {
+    try {
+      const rec = await audioFiles.get(from);
+      if (!rec) continue;
+      if (!(await audioFiles.get(to))) await audioFiles.put(to, rec);
+      await audioFiles.remove(from);
+    } catch (e) {
+      console.warn(e);
+    }
+  }
 }
 
 // ---- 一覧の描画 -------------------------------------------------------
@@ -468,7 +562,11 @@ function renderEmpty(list) {
     el.innerHTML = `<div class="empty-icon">${icon('music')}</div>
       <p class="empty-title">まだ曲が登録されていません</p>
       <p class="empty-text">右下の ＋ から曲を登録できます。CSV からまとめて読み込むこともできます。</p>
-      <div class="empty-actions"><button type="button" class="btn primary" data-act="add">${icon('plus')}曲を登録</button><button type="button" class="btn" data-act="import">${icon('upload')}CSVを読み込む</button></div>`;
+      <div class="empty-actions"><button type="button" class="btn primary" data-act="add">${icon('plus')}曲を登録</button><button type="button" class="btn" data-act="import">${icon('upload')}CSVを読み込む</button></div>
+      ${state.user?.local && state.store.canSignIn ? `<div class="empty-login">
+        <p class="empty-text">ログインしなくても使えます。Google アカウントでログインすると、スマホと PC で同じリストを使えます。</p>
+        <button type="button" class="btn sm" data-act="login">${icon('login')}Google でログイン</button>
+      </div>` : ''}`;
   } else {
     el.innerHTML = `<div class="empty-icon">${icon('search')}</div>
       <p class="empty-title">条件に合う曲がありません</p>
@@ -491,8 +589,6 @@ function clearFilters() {
 // ---- 固定の要素のイベント ---------------------------------------------
 
 function bindStatic() {
-  $('#btn-login').addEventListener('click', signIn);
-
   const q = $('#q');
   q.addEventListener('input', () => {
     state.query = q.value;
@@ -551,6 +647,7 @@ function bindStatic() {
   $('#empty').addEventListener('click', (e) => {
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'add') openForm();
+    else if (a === 'login') signIn();
     else if (a === 'reload') location.reload();
     else if (a === 'import') $('#csv-file').click();
     else if (a === 'clear') {
@@ -613,25 +710,6 @@ function bindStatic() {
   wide.addEventListener('change', () => {
     if (wide.matches) state.filterSheet?.close();
   });
-}
-
-async function signIn() {
-  const err = $('#login-error');
-  err.hidden = true;
-  const btn = $('#btn-login');
-  btn.disabled = true;
-  try {
-    await state.store.signIn();
-  } catch (e) {
-    if (['auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/user-cancelled'].includes(e?.code)) return;
-    console.error(e);
-    err.textContent = e?.code === 'auth/unauthorized-domain'
-      ? 'このURLからのログインが許可されていません。Firebase の承認済みドメインを確認してください。'
-      : `ログインできませんでした（${e?.code ?? e?.message ?? '不明なエラー'}）`;
-    err.hidden = false;
-  } finally {
-    btn.disabled = false;
-  }
 }
 
 function openFilterSheet() {
@@ -2226,14 +2304,13 @@ function paintSettings() {
   const sheet = state.settings;
   if (!sheet) return;
   const vo = voice();
-  const user = state.user;
-  const local = state.store.mode === 'local';
   const scrollTop = $('.settings .sheet-body', sheet.el)?.scrollTop ?? 0;
   const p = state.profile.prefs;
   const seg = (attr, options, current) => `<div class="seg full" role="group">${options.map(([v, l]) => `<button type="button" data-${attr}="${v}" aria-pressed="${String(v) === String(current)}">${l}</button>`).join('')}</div>`;
   $('.settings', sheet.el).innerHTML = `
     <div class="sheet-head"><h3>設定</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
     <div class="sheet-body">
+      ${accountSettingsHTML()}
       <section class="set-sec">
         <h4>表示（この端末）</h4>
         <span class="set-label">テーマ</span>
@@ -2300,16 +2377,38 @@ function paintSettings() {
         <div class="pv-files"><span data-role="pv-sum"></span><button type="button" class="btn sm danger-ghost" data-act="pv-clear">${icon('trash')}すべて削除</button></div>
         <p class="hint">曲の詳細画面の「試聴」で選んだファイルです。この端末にだけ保存しています。</p>
       </section>` : ''}
-      <section class="set-sec">
-        <h4>アカウント</h4>
-        ${local
-          ? '<p class="hint">ローカルモード：データはこのブラウザだけに保存されています。</p>'
-          : `<div class="account"><span class="acc-name">${esc(user?.email ?? user?.name ?? '')}</span><button type="button" class="btn sm" data-act="logout">${icon('logout')}ログアウト</button></div>`}
-      </section>
     </div>`;
   const body = $('.settings .sheet-body', sheet.el);
   if (body) body.scrollTop = scrollTop;
   paintAudioFiles();
+}
+
+function accountSettingsHTML() {
+  const user = state.user;
+  if (!state.store.canSignIn) {
+    return `<section class="set-sec">
+        <h4>アカウント</h4>
+        <p class="hint">ローカルモード：データはこのブラウザだけに保存されています。</p>
+      </section>`;
+  }
+  if (user?.local) {
+    return `<section class="set-sec">
+        <h4>アカウント</h4>
+        <p class="hint">ログインしていません。データはこの端末のブラウザだけに保存しています。</p>
+        <button type="button" class="btn primary wide" data-act="login"${state.signingIn ? ' disabled' : ''}>${icon('login')}Google でログイン</button>
+        <p class="hint">ログインすると、スマホと PC など複数の端末で同じリストを使えます。この端末の曲は、ログインしたあとにアカウントへ移せます。</p>
+      </section>`;
+  }
+  const n = state.store.localData().songs.length;
+  return `<section class="set-sec">
+      <h4>アカウント</h4>
+      <div class="account"><span class="acc-name">${esc(user?.email ?? user?.name ?? '')}</span><button type="button" class="btn sm" data-act="logout">${icon('logout')}ログアウト</button></div>
+      <p class="hint">ログインしている端末どうしで、同じリストを使えます。</p>
+      ${n ? `<div class="acc-local">
+        <span>ログインする前にこの端末に保存した曲が${n}曲あります。</span>
+        <button type="button" class="btn sm" data-act="move-local"${state.moving ? ' disabled' : ''}>${icon('upload')}アカウントに移す</button>
+      </div>` : ''}
+    </section>`;
 }
 
 async function paintAudioFiles() {
@@ -2360,8 +2459,14 @@ async function onSettingsClick(e) {
         toast('削除しました');
       }
       break;
+    case 'login': signIn(); break;
+    case 'move-local': offerLocalMove(); break;
     case 'logout':
-      if (await confirmDialog({ title: 'ログアウトしますか？', ok: 'ログアウト' })) {
+      if (await confirmDialog({
+        title: 'ログアウトしますか？',
+        message: 'アカウントの曲は消えず、もう一度ログインすると表示されます。この端末では、ログインしていないときのリストに切り替わります。',
+        ok: 'ログアウト',
+      })) {
         state.settings?.close();
         state.store.signOut();
       }

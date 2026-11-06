@@ -91,11 +91,24 @@ export async function createFirebaseStore(config) {
         ...deleteIds.map((id) => (b) => b.delete(songDoc(id))),
         ...entries.map(({ id, data }) => (b) => (id ? b.set(songDoc(id), data, { merge: true }) : b.set(F.doc(songsCol()), data))),
       ];
+      const commits = [];
       for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
         const batch = F.writeBatch(db);
         ops.slice(i, i + BATCH_LIMIT).forEach((op) => op(batch));
-        fire(batch.commit());
+        const p = batch.commit();
+        fire(p);
+        commits.push(p);
       }
+      // サーバーに届いたら true（失敗したら false）。待たなくてもよい
+      return Promise.all(commits).then(() => true, () => false);
+    },
+    // サーバーにある今のデータを読む（端末内のキャッシュは使わない。オフラインなら失敗する）
+    async fetchFromServer() {
+      const [songs, profile] = await Promise.all([F.getDocsFromServer(songsCol()), F.getDocFromServer(profileDoc())]);
+      return {
+        songs: songs.docs.map((d) => ({ ...d.data(), id: d.id })),
+        profile: profile.exists() ? profile.data() : {},
+      };
     },
     updateProfile(patch) {
       fire(F.setDoc(profileDoc(), patch, { merge: true }));
