@@ -16,13 +16,14 @@ import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, ope
 import { createLocalStore } from './store-local.js';
 import { plugins } from './plugins.js';
 import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, hasRandomRange } from './random.js';
+import { HAPTIC_LEVELS, HAPTIC_EVENTS, sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
 
 const VIEW_KEY = 'karaoke-list:view:v1';
 const HOLD_MS = 1400;
 const DEFAULT_OCTAVE = { low: 1, chestHigh: 2, falsettoHigh: 3 };
 const wide = matchMedia('(min-width: 1024px)');
 
-// この端末だけの表示設定（テーマ・一覧の文字の大きさ）。アクセントカラーは起動直後の表示用に控えておく
+// この端末だけの設定（テーマ・一覧の文字の大きさ・スワイプ・触覚フィードバック）。アクセントカラーは起動直後の表示用に控えておく
 const PREFS_KEY = 'karaoke-list:prefs:v1';
 const devicePrefs = (() => {
   try {
@@ -32,11 +33,15 @@ const devicePrefs = (() => {
       density: p.density === 'compact' || p.density === 'large' ? p.density : 'normal',
       accent: typeof p.accent === 'string' ? p.accent : 'indigo',
       swipe: p.swipe !== false,
+      haptics: sanitizeHaptics(p.haptics),
     };
   } catch {
-    return { theme: 'system', density: 'normal', accent: 'indigo', swipe: true };
+    return { theme: 'system', density: 'normal', accent: 'indigo', swipe: true, haptics: sanitizeHaptics() };
   }
 })();
+
+// 設定に合わせて、スマホを振動させる（設定でオフの操作や、振動できない端末では何もしない）
+const haptic = (event) => playHaptic(event, devicePrefs.haptics);
 
 function saveDevicePrefs() {
   try {
@@ -665,6 +670,7 @@ function setKey(id, key, octave) {
   const k = clampKey(key);
   const o = octave ?? s.octave;
   if (k === s.key && o === s.octave) return;
+  haptic('key');
   s.key = k;
   s.octave = o;
   holdOrder();
@@ -894,7 +900,10 @@ async function onDetailClick(e) {
     case 'k-reset': setKey(s.id, 0, 0); break;
     case 'k-oct-down': toggleOct(s.id, -1); break;
     case 'k-oct-up': toggleOct(s.id, 1); break;
-    case 'fav': state.store.updateSong(s.id, { favorite: !s.favorite }); break;
+    case 'fav':
+      haptic('fav');
+      state.store.updateSong(s.id, { favorite: !s.favorite });
+      break;
     case 'sung': markSung(s.id); break;
     case 'voice': openSettings(); break;
     case 'edit': openForm(s); break;
@@ -913,6 +922,7 @@ function markSung(id) {
   if (!s) return;
   const prev = { singCount: s.singCount, lastSungAt: s.lastSungAt };
   const next = { singCount: s.singCount + 1, lastSungAt: Date.now() };
+  haptic('sung');
   state.store.updateSong(id, next);
   toast(`${next.singCount}回目を記録しました`, {
     action: '元に戻す',
@@ -2100,7 +2110,31 @@ function openSettings() {
       paintSettings();
     }
     if (e.target.dataset.role === 'swipe') setDevicePref({ swipe: e.target.checked });
+    if (e.target.dataset.role === 'hap-on') setHaptics({ on: e.target.checked });
+    if (e.target.dataset.hap) setHaptics({ [e.target.dataset.hap]: e.target.checked });
   });
+}
+
+// 触覚フィードバックの設定（この端末）。指で操作する端末で、振動できるときだけ出す
+function hapticsSettingsHTML(seg) {
+  const mode = hapticMode();
+  if (!mode) return '';
+  const hp = devicePrefs.haptics;
+  const off = hp.on ? '' : ' disabled';
+  return `<section class="set-sec hap-sec${hp.on ? '' : ' off'}">
+        <h4>触覚フィードバック（この端末）</h4>
+        <label class="switch-row"><span>操作したときに振動する</span><input type="checkbox" class="switch" data-role="hap-on"${hp.on ? ' checked' : ''}></label>
+        <span class="set-label">強さ</span>
+        ${seg('hap-level', HAPTIC_LEVELS.map((l) => [l.id, l.label]), hp.level).replace(/<button /g, `<button${off} `)}
+        <p class="hint">${mode === 'ios' ? 'iPhone では振動の強さそのものは変えられないため、振動する回数（弱：1回、中：2回、強：3回）で強弱をつけます。' : ''}選ぶと、その強さで 1 回振動します。</p>
+        <span class="set-label">振動する操作</span>
+        ${HAPTIC_EVENTS.map((ev) => `<label class="switch-row"><span>${ev.label}</span><input type="checkbox" class="switch" data-hap="${ev.id}"${hp[ev.id] ? ' checked' : ''}${off}></label>`).join('')}
+        <p class="hint">キーの変更は、±1・原キー・オク下・オク上・おすすめキーへの変更です。${mode === 'ios' ? 'iPhone では iOS 18 以降で、本体の「設定」→「サウンドと触覚」→「システムの触覚」がオンのときに振動します。' : ''}</p>
+      </section>`;
+}
+
+function setHaptics(patch) {
+  setDevicePref({ haptics: sanitizeHaptics({ ...devicePrefs.haptics, ...patch }) });
 }
 
 function paintSettings() {
@@ -2125,6 +2159,7 @@ function paintSettings() {
         <label class="switch-row"><span>一覧のスワイプ操作</span><input type="checkbox" class="switch" data-role="swipe"${devicePrefs.swipe ? ' checked' : ''}></label>
         <p class="hint">曲の行を右へスワイプすると「歌った！」を記録し、左へスワイプするとお気に入りを切り替えます（スマホなど指で操作するときだけ）。</p>
       </section>
+      ${hapticsSettingsHTML(seg)}
       <section class="set-sec">
         <h4>表示（すべての端末で共通）</h4>
         <span class="set-label">アクセントカラー</span>
@@ -2196,6 +2231,11 @@ async function onSettingsClick(e) {
   }
   if (b.dataset.themeSet) return setDevicePref({ theme: b.dataset.themeSet });
   if (b.dataset.density) return setDevicePref({ density: b.dataset.density });
+  if (b.dataset.hapLevel) {
+    setHaptics({ level: b.dataset.hapLevel });
+    playHaptic('test', devicePrefs.haptics);
+    return;
+  }
   if (b.dataset.accentSet) return updateAccountPrefs({ accent: b.dataset.accentSet });
   if (b.dataset.noteStyle) return updateAccountPrefs({ noteStyle: b.dataset.noteStyle });
   if (b.dataset.margin != null) return updateAccountPrefs({ recMargin: +b.dataset.margin });
@@ -2500,6 +2540,7 @@ async function onSelbarClick(e) {
   } else if (a === 'tag') openBulkTags();
   else if (a === 'fav') {
     const allFav = sel.every((s) => s.favorite);
+    haptic('fav');
     state.store.putSongs(sel.map((s) => ({ id: s.id, data: { favorite: !allFav } })));
     toast(allFav ? `${sel.length}曲をお気に入りから外しました` : `${sel.length}曲をお気に入りにしました`);
   } else if (a === 'delete') {
@@ -2574,6 +2615,7 @@ function toggleFavorite(id) {
   const s = state.byId.get(id);
   if (!s) return;
   const prev = s.favorite;
+  haptic('fav');
   state.store.updateSong(id, { favorite: !prev });
   toast(prev ? `「${s.title}」をお気に入りから外しました` : `「${s.title}」をお気に入りにしました`, {
     action: '元に戻す',
@@ -2620,7 +2662,7 @@ function setupSwipe(ul) {
     if (armed !== st.armed) {
       st.armed = armed;
       st.li.classList.toggle('armed', armed);
-      if (armed) navigator.vibrate?.(8);
+      if (armed) haptic('swipe');
     }
   });
   const end = (e) => {
