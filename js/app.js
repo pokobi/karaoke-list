@@ -11,6 +11,7 @@ import { readHistoryFile, aggregate, thumbnailUrl } from './history.js';
 import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, openPopover, closePopover, popoverAnchor, pickNote } from './ui.js';
 import { createLocalStore } from './store-local.js';
 import { plugins } from './plugins.js';
+import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, hasRandomRange } from './random.js';
 
 const VIEW_KEY = 'karaoke-list:view:v1';
 const HOLD_MS = 1400;
@@ -35,6 +36,7 @@ const state = {
   artistsSheet: null,
   filterSheet: null,
   historySheet: null,
+  random: { opts: null, sheet: null, picks: [], artistQuery: '' },
 };
 
 function loadView() {
@@ -156,6 +158,7 @@ function onData({ songs, profile }) {
   paintKeyMenu();
   paintSettings();
   paintArtists();
+  paintRandomResults();
 }
 
 // ---- 一覧の描画 -------------------------------------------------------
@@ -444,7 +447,7 @@ function bindStatic() {
   $('#btn-menu').addEventListener('click', openSettings);
   $('#btn-sort').addEventListener('click', (e) => openSortMenu(e.currentTarget));
   $('#btn-sort-dir').addEventListener('click', () => updateView({ sortDir: state.view.sortDir === 'asc' ? 'desc' : 'asc' }));
-  $('#btn-random').addEventListener('click', () => randomPick());
+  $('#btn-random').addEventListener('click', openRandom);
   $('#fab').addEventListener('click', () => openForm());
 
   $('#list').addEventListener('click', (e) => {
@@ -662,7 +665,7 @@ function paintKeyMenu() {
 
 // ---- 曲の詳細 ---------------------------------------------------------
 
-function openDetail(id, { random = false } = {}) {
+function openDetail(id) {
   const sheet = openSheet('<div class="detail"></div>', {
     label: '曲の詳細',
     className: 'detail-layer',
@@ -670,7 +673,7 @@ function openDetail(id, { random = false } = {}) {
       if (state.detail?.sheet === sheet) state.detail = null;
     },
   });
-  state.detail = { id, sheet, random, sig: '' };
+  state.detail = { id, sheet, sig: '' };
   paintDetail();
   sheet.el.addEventListener('click', onDetailClick);
 }
@@ -684,7 +687,7 @@ function paintDetail() {
     return;
   }
   const root = $('.detail', d.sheet.el);
-  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, d.random, voice()]);
+  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, voice()]);
   if (sig !== d.sig) {
     d.sig = sig;
     root.innerHTML = detailHTML(s, d);
@@ -719,7 +722,6 @@ function detailHTML(s, d) {
     </tr>`;
   }).join('');
   return `
-    ${d.random ? `<div class="rand-bar">${icon('dice')}<span>ランダム選曲</span><button type="button" class="btn sm" data-act="reroll">${icon('refresh')}もう一度</button></div>` : ''}
     <div class="sheet-head d-head">
       ${s.artwork ? `<img class="d-art" src="${esc(s.artwork)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
       <div class="d-titles">
@@ -782,7 +784,6 @@ async function onDetailClick(e) {
     case 'k-oct': setKey(s.id, OCTAVE_DOWN); break;
     case 'fav': state.store.updateSong(s.id, { favorite: !s.favorite }); break;
     case 'sung': markSung(s.id); break;
-    case 'reroll': randomPick(s.id); break;
     case 'voice': openSettings(); break;
     case 'edit': openForm(s); break;
     case 'delete': removeSong(s.id); break;
@@ -822,22 +823,265 @@ async function removeSong(id) {
   toast('削除しました');
 }
 
-function randomPick(excludeId) {
-  const base = state.visible;
-  if (!base.length) {
-    toast('表示中の曲がありません');
-    return;
+// ---- ランダム選曲 -----------------------------------------------------
+// 一覧の絞り込みとは別に、専用の条件を持つ。条件はこの端末に記憶する。
+
+const RANDOM_KEY = 'karaoke-list:random:v1';
+
+function loadRandomOptions() {
+  try {
+    return sanitizeRandomOptions(JSON.parse(localStorage.getItem(RANDOM_KEY)));
+  } catch {
+    return defaultRandomOptions();
   }
-  const pool = base.length > 1 ? base.filter((s) => s.id !== excludeId) : base;
-  const s = pool[Math.floor(Math.random() * pool.length)];
-  if (state.detail) {
-    state.detail.id = s.id;
-    state.detail.random = true;
-    state.detail.sig = '';
-    paintDetail();
-    state.detail.sheet.el.scrollTop = 0;
+}
+
+function saveRandomOptions() {
+  try {
+    localStorage.setItem(RANDOM_KEY, JSON.stringify(state.random.opts));
+  } catch { /* 保存できなくても動作は続ける */ }
+}
+
+const randomPoolNow = () => randomPool(state.songs, state.random.opts, { voice: voice() });
+
+function hasRandomCondition() {
+  const o = state.random.opts;
+  return o.favoriteOnly || o.artists.length > 0 || o.tags.length > 0 || o.fitsVoice || o.excludeDays > 0 || o.preferLessSung || hasRandomRange(o);
+}
+
+function reroll() {
+  const r = state.random;
+  const pool = randomPoolNow();
+  r.picks = pickRandom(pool, r.opts.count, { weighted: r.opts.preferLessSung, avoid: new Set(r.picks) }).map((s) => s.id);
+  paintRandomResults();
+}
+
+function openRandom() {
+  if (state.random.sheet) return;
+  state.random.opts ??= loadRandomOptions();
+  const sheet = openSheet(`<div class="random">
+      <div class="sheet-head"><h3>ランダム選曲</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+      <div class="sheet-body">
+        <div class="seg rnd-count" role="group" aria-label="選ぶ曲数">${COUNTS.map((c) => `<button type="button" data-count="${c}">${c}曲</button>`).join('')}</div>
+        <p class="rnd-pool" data-role="pool"></p>
+        <div class="rnd-results" data-role="results"></div>
+        <details class="more rnd-cond"${hasRandomCondition() ? '' : ' open'}>
+          <summary><span class="rnd-sum" data-role="sum"></span>${icon('chevron-down')}</summary>
+          <div class="more-body" data-role="cond"></div>
+        </details>
+      </div>
+      <div class="sheet-foot"><button type="button" class="btn primary wide" data-act="reroll">${icon('dice')}もう一度</button></div>
+    </div>`, {
+    label: 'ランダム選曲',
+    className: 'random-layer',
+    onClose: () => { state.random.sheet = null; },
+  });
+  state.random.sheet = sheet;
+  state.random.picks = [];
+  paintRandomConditions();
+  reroll();
+  sheet.el.addEventListener('click', onRandomClick);
+  sheet.el.addEventListener('change', (e) => {
+    const key = e.target.dataset.opt;
+    if (key) updateRandom({ [key]: e.target.checked });
+  });
+  sheet.el.addEventListener('input', (e) => {
+    if (e.target.dataset.role !== 'artist-q') return;
+    state.random.artistQuery = e.target.value;
+    paintArtistChips();
+  });
+}
+
+function updateRandom(patch) {
+  state.random.opts = { ...state.random.opts, ...patch };
+  saveRandomOptions();
+  paintRandomConditions();
+  reroll();
+}
+
+function rangeText(s) {
+  const parts = RANGE_FIELDS.filter((f) => isNote(s[f.id])).map((f) => `${f.short} ${noteName(s[f.id] + s.key)}`);
+  return parts.length ? parts.join('・') : '音域未入力';
+}
+
+function randomArt(s, cls) {
+  return `<span class="${cls}">${icon('music')}${s.artwork ? `<img src="${esc(s.artwork)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
+}
+
+function randomRec(s) {
+  if (!hasVoice()) return '';
+  const rec = recommendKey(s, voice());
+  if (!rec || rec.key === s.key) return '';
+  return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(rec.key)}">${keyText(rec.key)}</b> にする</button>`;
+}
+
+function paintRandomResults() {
+  const r = state.random;
+  const sheet = r.sheet;
+  if (!sheet) return;
+  const poolSize = randomPoolNow().length;
+  $$('[data-count]', sheet.el).forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.count === r.opts.count)));
+  $('[data-role="pool"]', sheet.el).textContent = poolSize ? `条件に合う ${poolSize}曲 から選んでいます` : '';
+  const picks = r.picks.map((id) => state.byId.get(id)).filter(Boolean);
+  const box = $('[data-role="results"]', sheet.el);
+  if (!picks.length) {
+    box.innerHTML = `<div class="rnd-empty">
+      <p class="empty-title">${state.songs.length ? '条件に合う曲がありません' : 'まだ曲が登録されていません'}</p>
+      ${hasRandomCondition() ? '<p class="hint">条件をゆるめてみてください。</p><button type="button" class="btn" data-act="reset">条件をリセット</button>' : ''}
+    </div>`;
+  } else if (picks.length === 1) {
+    const s = picks[0];
+    box.innerHTML = `<div class="rnd-card">
+      <button type="button" class="rnd-main" data-open="${esc(s.id)}">
+        ${randomArt(s, 'rnd-art')}
+        <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span></span>
+      </button>
+      <div class="rnd-info"><span class="rnd-key" data-tone="${keyTone(s.key)}">キー ${keyText(s.key)}</span><span class="rnd-range">${rangeText(s)}</span></div>
+      ${randomRec(s)}
+      <div class="rnd-actions">
+        <button type="button" class="btn" data-open="${esc(s.id)}">詳細を見る</button>
+        <button type="button" class="btn" data-sung="${esc(s.id)}">${icon('mic')}歌った！</button>
+      </div>
+    </div>`;
   } else {
-    openDetail(s.id, { random: true });
+    box.innerHTML = `<ol class="rnd-list">${picks.map((s, i) => `<li>
+      <button type="button" class="rnd-row" data-open="${esc(s.id)}">
+        <span class="rnd-no">${i + 1}</span>
+        ${randomArt(s, 'rnd-art sm')}
+        <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span><span class="rnd-range">${rangeText(s)}</span></span>
+        <span class="rnd-key" data-tone="${keyTone(s.key)}">${keyText(s.key)}</span>
+      </button>
+      ${randomRec(s)}
+    </li>`).join('')}</ol>`;
+  }
+  $('[data-act="reroll"]', sheet.el).disabled = !poolSize;
+  $('[data-role="sum"]', sheet.el).innerHTML = randomSummary(poolSize);
+}
+
+function randomSummary() {
+  const o = state.random.opts;
+  const parts = [];
+  if (o.favoriteOnly) parts.push('お気に入り');
+  if (o.artists.length) parts.push(o.artists.length === 1 ? o.artists[0] : `${o.artists[0]} ほか${o.artists.length - 1}組`);
+  if (o.tags.length) parts.push(o.tags.join('・'));
+  if (o.fitsVoice) parts.push(o.fitsMode === 'current' ? '今のキーで歌える' : '歌える曲');
+  if (o.excludeDays) parts.push(`${o.excludeDays}日以内に歌った曲を除く`);
+  if (o.preferLessSung) parts.push('歌っていない曲を優先');
+  if (hasRandomRange(o)) parts.push('音域の高さ');
+  return `<span class="rnd-sum-l">条件</span><span class="rnd-sum-t">${parts.length ? esc(parts.join(' / ')) : 'なし（すべての曲から）'}</span>`;
+}
+
+function paintRandomConditions() {
+  const sheet = state.random.sheet;
+  if (!sheet) return;
+  const o = state.random.opts;
+  const artistCount = artistCounts(state.songs).size;
+  const tags = allTags(state.songs);
+  const voiceOk = hasVoice();
+  $('[data-role="cond"]', sheet.el).innerHTML = `
+    <label class="switch-row"><span>お気に入りのみ</span><input type="checkbox" class="switch" data-opt="favoriteOnly"${o.favoriteOnly ? ' checked' : ''}></label>
+    <div class="fp-sec">
+      <div class="label-row"><span class="label">アーティスト${o.artists.length ? `（${o.artists.length}組を選択中）` : ''}</span>${o.artists.length ? '<button type="button" class="link-btn" data-act="artists-clear">選択を解除</button>' : ''}</div>
+      ${artistCount > 12 ? `<label class="search sm">${icon('search')}<input type="search" data-role="artist-q" placeholder="アーティストを探す" autocomplete="off" aria-label="アーティストを探す" value="${esc(state.random.artistQuery)}"></label>` : ''}
+      <div class="chip-set" data-role="artist-chips"></div>
+    </div>
+    <div class="fp-sec">
+      <span class="label">タグ</span>
+      <div class="chip-set">${tags.map((t) => `<button type="button" class="chip${o.tags.includes(t) ? ' on' : ''}" data-tag="${esc(t)}" aria-pressed="${o.tags.includes(t)}">${esc(t)}</button>`).join('')}</div>
+    </div>
+    <div class="fp-sec">
+      <label class="switch-row"><span>自分の音域で歌える曲だけ</span><input type="checkbox" class="switch" data-opt="fitsVoice"${o.fitsVoice && voiceOk ? ' checked' : ''}${voiceOk ? '' : ' disabled'}></label>
+      ${voiceOk
+        ? `<div class="seg seg-sm rnd-wide" role="group" aria-label="歌えるかの判定"><button type="button" data-mode="recommend" aria-pressed="${o.fitsMode === 'recommend'}">おすすめキーにすれば歌える</button><button type="button" data-mode="current" aria-pressed="${o.fitsMode === 'current'}">今のキーで歌える</button></div>`
+        : '<p class="hint">設定で自分の音域を登録すると使えます。</p>'}
+    </div>
+    <div class="fp-sec">
+      <span class="label">最近歌った曲を除く</span>
+      <div class="seg seg-sm rnd-wide" role="group" aria-label="最近歌った曲を除く">${EXCLUDE_DAYS.map((d) => `<button type="button" data-days="${d}" aria-pressed="${o.excludeDays === d}">${d ? `${d}日以内` : 'しない'}</button>`).join('')}</div>
+    </div>
+    <label class="switch-row"><span>あまり歌っていない曲を出やすく</span><input type="checkbox" class="switch" data-opt="preferLessSung"${o.preferLessSung ? ' checked' : ''}></label>
+    <div class="fp-sec">
+      <span class="label">音域の高さ（キー適用後の音）</span>
+      <div class="rf">${RANGE_FIELDS.map((f) => {
+        const { min, max } = o.range[f.id] ?? {};
+        return `<div class="rf-row" data-rfield="${f.id}">
+          <span class="rf-label">${f.label}</span>
+          <button type="button" class="rf-btn${isNote(min) ? ' set' : ''}" data-bound="min">${isNote(min) ? noteName(min) : '下限なし'}</button>
+          <span class="rf-sep">〜</span>
+          <button type="button" class="rf-btn${isNote(max) ? ' set' : ''}" data-bound="max">${isNote(max) ? noteName(max) : '上限なし'}</button>
+        </div>`;
+      }).join('')}</div>
+    </div>
+    ${hasRandomCondition() ? '<button type="button" class="btn wide rnd-reset" data-act="reset">条件をリセット</button>' : ''}`;
+  paintArtistChips();
+}
+
+// アーティストの選択肢。選択中を先に、そのあと曲数の多い順。多いときは検索で絞る
+function paintArtistChips() {
+  const sheet = state.random.sheet;
+  const box = sheet && $('[data-role="artist-chips"]', sheet.el);
+  if (!box) return;
+  const o = state.random.opts;
+  const counts = artistCounts(state.songs);
+  const q = normalize(state.random.artistQuery);
+  const LIMIT = 40;
+  const names = [...counts.keys()]
+    .filter((n) => o.artists.includes(n) || !q || normalize(n).includes(q))
+    .sort((a, b) => Number(o.artists.includes(b)) - Number(o.artists.includes(a)) || counts.get(b) - counts.get(a) || collator.compare(a, b));
+  box.innerHTML = names.slice(0, LIMIT).map((n) => {
+    const on = o.artists.includes(n);
+    return `<button type="button" class="chip${on ? ' on' : ''}" data-artist="${esc(n)}" aria-pressed="${on}">${esc(n)}<span class="chip-n">${counts.get(n)}</span></button>`;
+  }).join('') + (names.length > LIMIT ? `<span class="hint">ほか${names.length - LIMIT}組（検索で絞り込めます）</span>` : '')
+    + (!names.length ? '<span class="hint">見つかりません</span>' : '');
+}
+
+async function onRandomClick(e) {
+  const b = e.target.closest('button');
+  const r = state.random;
+  if (!b || !r.sheet) return;
+  const o = r.opts;
+  if (b.dataset.count) {
+    r.opts = { ...o, count: +b.dataset.count };
+    saveRandomOptions();
+    reroll();
+  } else if (b.dataset.artist != null) {
+    const n = b.dataset.artist;
+    updateRandom({ artists: o.artists.includes(n) ? o.artists.filter((x) => x !== n) : [...o.artists, n] });
+  } else if (b.dataset.tag != null) {
+    const t = b.dataset.tag;
+    updateRandom({ tags: o.tags.includes(t) ? o.tags.filter((x) => x !== t) : [...o.tags, t] });
+  } else if (b.dataset.mode) {
+    updateRandom({ fitsMode: b.dataset.mode, fitsVoice: true });
+  } else if (b.dataset.days != null) {
+    updateRandom({ excludeDays: +b.dataset.days });
+  } else if (b.dataset.bound) {
+    const field = b.closest('[data-rfield]').dataset.rfield;
+    const bound = b.dataset.bound;
+    const f = RANGE_FIELDS.find((x) => x.id === field);
+    const cur = o.range[field] ?? {};
+    const v = await pickNote({ title: `${f.label}の${bound === 'min' ? '下限' : '上限'}`, value: cur[bound] ?? null, octave: DEFAULT_OCTAVE[field], clearLabel: '指定なし' });
+    if (v === undefined) return;
+    const next = { ...cur, [bound]: v ?? undefined };
+    if (isNote(next.min) && isNote(next.max) && next.min > next.max) [next.min, next.max] = [next.max, next.min];
+    updateRandom({ range: { ...o.range, [field]: next } });
+  } else if (b.dataset.open) {
+    openDetail(b.dataset.open);
+  } else if (b.dataset.sung) {
+    markSung(b.dataset.sung);
+  } else if (b.dataset.rec) {
+    setKey(b.dataset.rec, +b.dataset.k);
+    paintRandomResults();
+  } else {
+    switch (b.dataset.act) {
+      case 'close': r.sheet.close(); break;
+      case 'reroll': reroll(); r.sheet.el.querySelector('.sheet-body').scrollTop = 0; break;
+      case 'artists-clear': updateRandom({ artists: [] }); break;
+      case 'reset':
+        r.artistQuery = '';
+        updateRandom({ ...defaultRandomOptions(), count: o.count });
+        break;
+      default:
+    }
   }
 }
 
