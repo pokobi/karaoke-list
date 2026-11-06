@@ -2430,7 +2430,7 @@ function openTextImport() {
     job.rows = [];
     sheet.dismissible = true;
     body.innerHTML = `<p class="hint ti-lead">メモなどを貼り付けると、1行を1曲として iTunes で調べ、アーティスト名・曲名・ジャケット画像を入れます。追加する前に確認・修正できます。</p>
-      <textarea class="input ti-text" data-role="text" rows="10" placeholder="優里 - メリーゴーランド&#10;アンコール / YOASOBI&#10;ミセス ライラック" aria-label="追加する曲の一覧" autocomplete="off" autocapitalize="off" spellcheck="false">${esc(job.text)}</textarea>
+      <textarea class="input ti-text" data-role="text" rows="10" placeholder="アーティスト名 - 曲名&#10;曲名 / アーティスト名&#10;アーティスト名 曲名" aria-label="追加する曲の一覧" autocomplete="off" autocapitalize="off" spellcheck="false">${esc(job.text)}</textarea>
       <p class="hint">アーティスト名と曲名の順番や区切り（- や / など）は、ばらばらでも構いません。曲名だけの行も調べます。一度に${MAX_LINES}行まで調べられます。</p>`;
     foot.className = 'sheet-foot';
     foot.innerHTML = `<button type="button" class="btn primary" data-act="run">${icon('search')}調べる</button>`;

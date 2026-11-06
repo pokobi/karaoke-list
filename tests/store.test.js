@@ -128,16 +128,16 @@ test('書き込みのエラーは、どちらの保存先からも通知され�
 test('この端末の曲をアカウントへ移す：同じ曲は追加せず、ID はそのまま使う', () => {
   const local = {
     songs: [
-      { id: 'g1', artist: 'YOASOBI', title: '夜に駆ける', key: -2, singCount: 3 },
+      { id: 'g1', artist: 'LUMINA', title: 'つきあかり', key: -2, singCount: 3 },
       { id: 'g2', artist: 'スピッツ', title: 'チェリー' },
-      { id: 's9', artist: 'Aimer', title: '残響散歌' },
+      { id: 's9', artist: 'ユイ', title: '雨の日' },
     ],
     profile: {},
   };
   const account = {
     songs: [
-      { id: 's1', artist: 'ＹＯＡＳＯＢＩ', title: '夜に駆ける' },
-      { id: 's9', artist: 'back number', title: '水平線' },
+      { id: 's1', artist: 'ＬＵＭＩＮＡ', title: 'つきあかり' },
+      { id: 's9', artist: 'sky lantern', title: '白い街' },
     ],
     profile: {},
   };
@@ -154,15 +154,15 @@ test('この端末の音域・タグ・候補・表示の設定は、アカウ�
     profile: {
       range: { low: n('mid1C'), chestHigh: n('hiA') },
       tags: ['練習中', 'バラード'],
-      artists: ['YOASOBI', 'Aimer'],
+      artists: ['LUMINA', 'ユイ'],
       prefs: { accent: 'pink' },
     },
   };
-  const plan = planLocalMove(local, { songs: [], profile: { range: { chestHigh: n('mid2G') }, artists: ['Aimer'], prefs: { accent: 'teal' } } });
+  const plan = planLocalMove(local, { songs: [], profile: { range: { chestHigh: n('mid2G') }, artists: ['ユイ'], prefs: { accent: 'teal' } } });
   assert.deepEqual(plan.profile.range, { low: n('mid1C'), chestHigh: n('mid2G') });
   assert.deepEqual(plan.profile.tags, [...PRESET_TAGS, 'バラード']);
   assert.equal('prefs' in plan.profile, false);
-  assert.deepEqual(plan.artists, ['YOASOBI']);
+  assert.deepEqual(plan.artists, ['LUMINA']);
 
   const fresh = planLocalMove(local, { songs: [], profile: {} });
   assert.equal(fresh.profile.prefs.accent, 'pink');

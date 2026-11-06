@@ -4,9 +4,9 @@ import { parseNote as n } from '../js/notes.js';
 import { normalizeSong, applyView, defaultView, sanitizeView, suggestArtists, allTags, toPayload, dupKey } from '../js/model.js';
 
 const songs = [
-  { id: 'a', artist: 'ヨルシカ', title: 'ただ君に晴れ', low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: n('hiC'), key: -3, tags: ['バラード'], createdAt: 3, singCount: 4 },
-  { id: 'b', artist: 'Official髭男dism', title: 'Pretender', low: n('mid1A'), chestHigh: n('hiB'), falsettoHigh: null, key: 0, favorite: true, createdAt: 2 },
-  { id: 'c', artist: 'ヨルシカ', title: '花に亡霊', low: n('lowG'), chestHigh: n('mid2G'), falsettoHigh: n('hiD'), key: 0, createdAt: 1, memo: 'サビ注意' },
+  { id: 'a', artist: 'ソラシド', title: '夜明けのワルツ', low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: n('hiC'), key: -3, tags: ['バラード'], createdAt: 3, singCount: 4 },
+  { id: 'b', artist: 'Blue Harbor', title: 'Daybreak', low: n('mid1A'), chestHigh: n('hiB'), falsettoHigh: null, key: 0, favorite: true, createdAt: 2 },
+  { id: 'c', artist: 'ソラシド', title: '花火の夜', low: n('lowG'), chestHigh: n('mid2G'), falsettoHigh: n('hiD'), key: 0, createdAt: 1, memo: 'サビ注意' },
   { id: 'd', artist: 'スピッツ', title: 'チェリー', low: null, chestHigh: null, falsettoHigh: null, key: 2, createdAt: 4 },
 ].map(normalizeSong);
 
@@ -14,14 +14,14 @@ const view = (patch = {}) => ({ ...defaultView(), ...patch });
 const ids = (list) => list.map((s) => s.id).join(',');
 
 test('検索はひらがな・カタカナや全角半角の違いを吸収する', () => {
-  assert.deepEqual(applyView(songs, view(), 'よるしか').map((s) => s.id).sort(), ['a', 'c']);
-  assert.deepEqual(applyView(songs, view(), 'ＰＲＥＴＥＮＤＥＲ').map((s) => s.id), ['b']);
+  assert.deepEqual(applyView(songs, view(), 'そらしど').map((s) => s.id).sort(), ['a', 'c']);
+  assert.deepEqual(applyView(songs, view(), 'ＤＡＹＢＲＥＡＫ').map((s) => s.id), ['b']);
   assert.deepEqual(applyView(songs, view(), 'サビ').map((s) => s.id), ['c']);
-  assert.deepEqual(applyView(songs, view(), 'ヨルシカ 花').map((s) => s.id), ['c']);
+  assert.deepEqual(applyView(songs, view(), 'ソラシド 花').map((s) => s.id), ['c']);
 });
 
 test('アーティスト・タグ・お気に入りで絞り込める', () => {
-  assert.deepEqual(applyView(songs, view({ artist: 'ヨルシカ' }), '').map((s) => s.id).sort(), ['a', 'c']);
+  assert.deepEqual(applyView(songs, view({ artist: 'ソラシド' }), '').map((s) => s.id).sort(), ['a', 'c']);
   assert.deepEqual(applyView(songs, view({ tags: ['バラード'] }), '').map((s) => s.id), ['a']);
   assert.deepEqual(applyView(songs, view({ favoriteOnly: true }), '').map((s) => s.id), ['b']);
 });
@@ -57,11 +57,11 @@ test('壊れた保存値から表示設定を復元する', () => {
 });
 
 test('アーティスト候補は前方一致を優先し、曲数の多い順', () => {
-  const names = ['ヨルシカ', 'Official髭男dism', 'スピッツ', 'ヨアソビ'];
-  assert.deepEqual(suggestArtists(names, songs, 'よ'), ['ヨルシカ', 'ヨアソビ']);
-  assert.deepEqual(suggestArtists(names, songs, 'dism'), ['Official髭男dism']);
-  assert.equal(suggestArtists(names, songs, '')[0], 'ヨルシカ');
-  assert.deepEqual(suggestArtists(names, songs, 'ヨルシカ'), []);
+  const names = ['ソラシド', 'Blue Harbor', 'スピッツ', 'ソラマメ'];
+  assert.deepEqual(suggestArtists(names, songs, 'そ'), ['ソラシド', 'ソラマメ']);
+  assert.deepEqual(suggestArtists(names, songs, 'harbor'), ['Blue Harbor']);
+  assert.equal(suggestArtists(names, songs, '')[0], 'ソラシド');
+  assert.deepEqual(suggestArtists(names, songs, 'ソラシド'), []);
 });
 
 test('保存用データと重複判定', () => {
@@ -69,6 +69,6 @@ test('保存用データと重複判定', () => {
   assert.equal('id' in p, false);
   assert.equal('_search' in p, false);
   assert.equal(p.key, -3);
-  assert.equal(dupKey({ artist: 'ﾖﾙｼｶ', title: 'ただ君に晴れ ' }), dupKey(songs[0]));
+  assert.equal(dupKey({ artist: 'ｿﾗｼﾄﾞ', title: '夜明けのワルツ ' }), dupKey(songs[0]));
   assert.deepEqual(allTags(songs), ['練習中', 'バラード']);
 });

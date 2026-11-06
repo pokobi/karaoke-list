@@ -27,7 +27,7 @@ test('音域が未入力の曲だけに絞り込める', () => {
 });
 
 test('CSV にジャケット画像の URL も書き出し・読み込みできる', () => {
-  const src = [normalizeSong({ artist: 'YOASOBI', title: '夜に駆ける', artwork: 'https://is1-ssl.mzstatic.com/a/300x300bb.jpg' })];
+  const src = [normalizeSong({ artist: 'LUMINA', title: 'つきあかり', artwork: 'https://is1-ssl.mzstatic.com/a/300x300bb.jpg' })];
   const { songs, errors } = rowsToSongs(parseCSV(songsToCSV(src)));
   assert.deepEqual(errors, []);
   assert.equal(songs[0].artwork, 'https://is1-ssl.mzstatic.com/a/300x300bb.jpg');

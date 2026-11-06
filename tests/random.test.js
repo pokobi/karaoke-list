@@ -7,9 +7,9 @@ import { defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, fi
 const DAY = 86_400_000;
 const now = Date.UTC(2026, 10, 6);
 const songs = [
-  { id: 'a', artist: 'ヨルシカ', title: 'A', tags: ['練習中'], favorite: true, low: n('mid1C'), chestHigh: n('mid2G'), key: 0, singCount: 10, lastSungAt: now - 2 * DAY },
-  { id: 'b', artist: 'ヨルシカ', title: 'B', low: n('mid1C'), chestHigh: n('hiB'), key: -2, singCount: 0 },
-  { id: 'c', artist: 'YOASOBI', title: 'C', tags: ['バラード'], low: n('mid1F'), chestHigh: n('hiD'), falsettoHigh: n('hiF'), key: 0 },
+  { id: 'a', artist: 'ソラシド', title: 'A', tags: ['練習中'], favorite: true, low: n('mid1C'), chestHigh: n('mid2G'), key: 0, singCount: 10, lastSungAt: now - 2 * DAY },
+  { id: 'b', artist: 'ソラシド', title: 'B', low: n('mid1C'), chestHigh: n('hiB'), key: -2, singCount: 0 },
+  { id: 'c', artist: 'LUMINA', title: 'C', tags: ['バラード'], low: n('mid1F'), chestHigh: n('hiD'), falsettoHigh: n('hiF'), key: 0 },
   { id: 'd', artist: 'スピッツ', title: 'D', key: 0, lastSungAt: now - 20 * DAY },
 ].map(normalizeSong);
 const opts = (patch) => ({ ...defaultRandomOptions(), ...patch });
@@ -17,8 +17,8 @@ const ids = (list) => list.map((s) => s.id).sort().join('');
 const voice = { low: n('lowG'), chestHigh: n('mid2G'), falsettoHigh: n('hiC') };
 
 test('アーティスト・タグ・お気に入りで絞る', () => {
-  assert.equal(ids(randomPool(songs, opts({ artists: ['ヨルシカ'] }))), 'ab');
-  assert.equal(ids(randomPool(songs, opts({ artists: ['ヨルシカ', 'スピッツ'] }))), 'abd');
+  assert.equal(ids(randomPool(songs, opts({ artists: ['ソラシド'] }))), 'ab');
+  assert.equal(ids(randomPool(songs, opts({ artists: ['ソラシド', 'スピッツ'] }))), 'abd');
   assert.equal(ids(randomPool(songs, opts({ tags: ['練習中', 'バラード'] }))), 'ac');
   assert.equal(ids(randomPool(songs, opts({ favoriteOnly: true }))), 'a');
 });
