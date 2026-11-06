@@ -1002,9 +1002,12 @@ textarea.input { resize: vertical; min-height: 84px; }
 .rnd-empty { text-align: center; padding: 28px 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .rnd-cond { margin-top: 16px; }
 .rnd-cond summary { gap: 10px; }
-.rnd-sum { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.rnd-sum { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-top: 14px; padding: 0 2px; }
 .rnd-sum-l { flex: none; font-weight: 700; color: var(--text); }
-.rnd-sum-t { font-size: 12.5px; font-weight: 500; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd-sum-t { font-size: 12.5px; font-weight: 500; color: var(--text-2); line-height: 1.6; }
+.rnd-foot .btn { min-height: 48px; }
+.rnd-foot .btn.primary { flex: 1; font-size: 15.5px; }
+.rnd-foot .btn .ic { width: 19px; height: 19px; }
 .rnd-cond .fp-sec { margin-top: 14px; }
 .rnd-cond .fp-sec .switch-row { margin-top: -6px; }
 .rnd-wide { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; width: 100%; }

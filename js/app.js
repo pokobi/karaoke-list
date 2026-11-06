@@ -206,7 +206,7 @@ function onData({ songs, profile }) {
   paintKeyMenu();
   paintSettings();
   paintArtists();
-  paintRandomResults();
+  paintRandom();
   paintTagManager();
   paintSelbar();
 }
@@ -950,9 +950,32 @@ function hasRandomCondition() {
 
 function reroll() {
   const r = state.random;
-  const pool = randomPoolNow();
-  r.picks = pickRandom(pool, r.opts.count, { weighted: r.opts.preferLessSung, avoid: new Set(r.picks) }).map((s) => s.id);
-  paintRandomResults();
+  r.picks = pickRandom(randomPoolNow(), r.opts.count, { weighted: r.opts.preferLessSung, avoid: new Set(r.picks) }).map((s) => s.id);
+  r.step = 'result';
+  paintRandom();
+  $('.sheet-body', r.sheet.el).scrollTop = 0;
+}
+
+// 条件の画面（step = 'cond'）と結果の画面（step = 'result'）を切り替えて描く
+function paintRandom() {
+  const r = state.random;
+  const sheet = r.sheet;
+  if (!sheet) return;
+  const poolSize = randomPoolNow().length;
+  const result = r.step === 'result';
+  $('[data-role="cond-view"]', sheet.el).hidden = result;
+  $('[data-role="result-view"]', sheet.el).hidden = !result;
+  $$('[data-count]', sheet.el).forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.count === r.opts.count)));
+  const foot = $('[data-role="foot"]', sheet.el);
+  if (result) {
+    foot.innerHTML = `<button type="button" class="btn" data-act="cond">${icon('filter')}条件を変える</button>`
+      + `<button type="button" class="btn primary" data-act="reroll"${poolSize ? '' : ' disabled'}>${icon('dice')}もう一度</button>`;
+    paintRandomResults(poolSize);
+  } else {
+    const n = Math.min(r.opts.count, poolSize);
+    foot.innerHTML = `<button type="button" class="btn" data-act="reset"${hasRandomCondition() ? '' : ' disabled'}>リセット</button>`
+      + `<button type="button" class="btn primary" data-act="draw"${poolSize ? '' : ' disabled'}>${icon('dice')}${poolSize ? `${poolSize}曲から${n}曲選ぶ` : '条件に合う曲がありません'}</button>`;
+  }
 }
 
 function openRandom() {
@@ -961,15 +984,18 @@ function openRandom() {
   const sheet = openSheet(`<div class="random">
       <div class="sheet-head"><h3>ランダム選曲</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
       <div class="sheet-body">
-        <div class="seg rnd-count" role="group" aria-label="選ぶ曲数">${COUNTS.map((c) => `<button type="button" data-count="${c}">${c}曲</button>`).join('')}</div>
-        <p class="rnd-pool" data-role="pool"></p>
-        <div class="rnd-results" data-role="results"></div>
-        <details class="more rnd-cond"${hasRandomCondition() ? '' : ' open'}>
-          <summary><span class="rnd-sum" data-role="sum"></span>${icon('chevron-down')}</summary>
-          <div class="more-body" data-role="cond"></div>
-        </details>
+        <div data-role="cond-view">
+          <span class="set-label">選ぶ曲数</span>
+          <div class="seg rnd-count" role="group" aria-label="選ぶ曲数">${COUNTS.map((c) => `<button type="button" data-count="${c}">${c}曲</button>`).join('')}</div>
+          <div class="rnd-cond" data-role="cond"></div>
+        </div>
+        <div data-role="result-view" hidden>
+          <p class="rnd-pool" data-role="pool"></p>
+          <div class="rnd-results" data-role="results"></div>
+          <p class="rnd-sum" data-role="sum"></p>
+        </div>
       </div>
-      <div class="sheet-foot"><button type="button" class="btn primary wide" data-act="reroll">${icon('dice')}もう一度</button></div>
+      <div class="sheet-foot rnd-foot" data-role="foot"></div>
     </div>`, {
     label: 'ランダム選曲',
     className: 'random-layer',
@@ -977,8 +1003,9 @@ function openRandom() {
   });
   state.random.sheet = sheet;
   state.random.picks = [];
+  state.random.step = 'cond';
   paintRandomConditions();
-  reroll();
+  paintRandom();
   sheet.el.addEventListener('click', onRandomClick);
   sheet.el.addEventListener('change', (e) => {
     const key = e.target.dataset.opt;
@@ -995,7 +1022,7 @@ function updateRandom(patch) {
   state.random.opts = { ...state.random.opts, ...patch };
   saveRandomOptions();
   paintRandomConditions();
-  reroll();
+  paintRandom();
 }
 
 function rangeText(s) {
@@ -1019,19 +1046,17 @@ function randomRec(s) {
   return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b> にする</button>`;
 }
 
-function paintRandomResults() {
+function paintRandomResults(poolSize) {
   const r = state.random;
   const sheet = r.sheet;
   if (!sheet) return;
-  const poolSize = randomPoolNow().length;
-  $$('[data-count]', sheet.el).forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.count === r.opts.count)));
-  $('[data-role="pool"]', sheet.el).textContent = poolSize ? `条件に合う ${poolSize}曲 から選んでいます` : '';
+  $('[data-role="pool"]', sheet.el).textContent = poolSize ? `条件に合う ${poolSize}曲 から選びました` : '';
   const picks = r.picks.map((id) => state.byId.get(id)).filter(Boolean);
   const box = $('[data-role="results"]', sheet.el);
   if (!picks.length) {
     box.innerHTML = `<div class="rnd-empty">
       <p class="empty-title">${state.songs.length ? '条件に合う曲がありません' : 'まだ曲が登録されていません'}</p>
-      ${hasRandomCondition() ? '<p class="hint">条件をゆるめてみてください。</p><button type="button" class="btn" data-act="reset">条件をリセット</button>' : ''}
+      ${hasRandomCondition() ? '<p class="hint">「条件を変える」から、条件をゆるめてみてください。</p>' : ''}
     </div>`;
   } else if (picks.length === 1) {
     const s = picks[0];
@@ -1058,8 +1083,7 @@ function paintRandomResults() {
       ${randomRec(s)}
     </li>`).join('')}</ol>`;
   }
-  $('[data-act="reroll"]', sheet.el).disabled = !poolSize;
-  $('[data-role="sum"]', sheet.el).innerHTML = randomSummary(poolSize);
+  $('[data-role="sum"]', sheet.el).innerHTML = randomSummary();
 }
 
 function randomSummary() {
@@ -1115,8 +1139,7 @@ function paintRandomConditions() {
           <button type="button" class="rf-btn${isNote(max) ? ' set' : ''}" data-bound="max">${isNote(max) ? fmtNote(max) : '上限なし'}</button>
         </div>`;
       }).join('')}</div>
-    </div>
-    ${hasRandomCondition() ? '<button type="button" class="btn wide rnd-reset" data-act="reset">条件をリセット</button>' : ''}`;
+    </div>`;
   paintArtistChips();
 }
 
@@ -1147,7 +1170,7 @@ async function onRandomClick(e) {
   if (b.dataset.count) {
     r.opts = { ...o, count: +b.dataset.count };
     saveRandomOptions();
-    reroll();
+    paintRandom();
   } else if (b.dataset.artist != null) {
     const n = b.dataset.artist;
     updateRandom({ artists: o.artists.includes(n) ? o.artists.filter((x) => x !== n) : [...o.artists, n] });
@@ -1174,11 +1197,18 @@ async function onRandomClick(e) {
     markSung(b.dataset.sung);
   } else if (b.dataset.rec) {
     setTotalKey(b.dataset.rec, +b.dataset.k);
-    paintRandomResults();
+    paintRandom();
   } else {
     switch (b.dataset.act) {
       case 'close': r.sheet.close(); break;
-      case 'reroll': reroll(); r.sheet.el.querySelector('.sheet-body').scrollTop = 0; break;
+      case 'draw':
+      case 'reroll': reroll(); break;
+      case 'cond':
+        r.step = 'cond';
+        paintRandomConditions();
+        paintRandom();
+        $('.sheet-body', r.sheet.el).scrollTop = 0;
+        break;
       case 'artists-clear': updateRandom({ artists: [] }); break;
       case 'reset':
         r.artistQuery = '';
@@ -2204,7 +2234,7 @@ function updateAccountPrefs(patch) {
   paintDetail();
   paintKeyMenu();
   paintSettings();
-  paintRandomResults();
+  paintRandom();
   state.store.updateProfile({ prefs: next });
 }
 
