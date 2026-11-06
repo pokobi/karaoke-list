@@ -1001,7 +1001,7 @@ function detailHTML(s, d) {
         <tbody>${rows}</tbody>
       </table>
       ${pluginDetailHTML(s)}
-      ${rangeActionsHTML('d-ractions')}
+      ${rangeActionsHTML('d-ractions', isRangeMissing(s))}
       ${d.preview ? '<section class="d-sec d-pv" data-role="preview"></section>' : ''}
       <div class="d-stats">
         <div class="stat"><span class="sl">歌った回数</span><span class="sv">${s.singCount}<small>回</small></span>${s.singCount || s.lastSungAt ? `<button type="button" class="stat-reset" data-act="sung-reset" aria-label="歌った回数をリセット" title="歌った回数をリセット">${icon('reset')}</button>` : ''}</div>
@@ -1561,9 +1561,14 @@ function formHTML(isNew, openMore) {
 // 追加機能が用意した、音域欄のボタン
 const rangeActions = () => plugins.flatMap((p) => (p.rangeAction ? [p.rangeAction] : []));
 
-function rangeActionsHTML(extraClass = '') {
+// 音域を入れるためのボタン。追加機能の「音域を調べる」は目立たせ、音域が未入力（missing）なら色を付ける。
+// 追加機能があるときの「Webで音域を検索」は、最後の手段として控えめにする
+function rangeActionsHTML(extraClass = '', missing = false) {
   const actions = rangeActions();
-  return `<div class="range-actions${extraClass ? ` ${extraClass}` : ''}">${actions.map((a, i) => `<button type="button" class="pill" data-plugin="${i}">${icon(a.icon ?? 'search')}${esc(a.label)}</button>`).join('')}<button type="button" class="pill" data-act="range-web">${icon('external')}Webで音域を検索</button></div>`;
+  const web = actions.length
+    ? `<button type="button" class="range-web" data-act="range-web">${icon('external')}Webで音域を検索</button>`
+    : `<button type="button" class="pill" data-act="range-web">${icon('external')}Webで音域を検索</button>`;
+  return `<div class="range-actions${extraClass ? ` ${extraClass}` : ''}">${actions.map((a, i) => `<button type="button" class="pill pill-lookup${missing ? ' urgent' : ''}" data-plugin="${i}">${icon(a.icon ?? 'search')}${esc(a.label)}</button>`).join('')}${web}</div>`;
 }
 
 // 「アーティスト名 曲名 音域」で Web 検索する。Google のアカウントの履歴に残らないよう、DuckDuckGo（日本の検索結果）を使う
@@ -1749,6 +1754,9 @@ function openForm(song = null) {
     const w = el('[data-role="range-warn"]');
     w.hidden = !warns.length;
     w.textContent = warns.join('。');
+    // 最低音か地声最高音が未入力なら、「音域を調べる」に色を付ける
+    const missing = !isNote(draft.low) || !isNote(draft.chestHigh);
+    for (const b of form.querySelectorAll('.pill-lookup')) b.classList.toggle('urgent', missing);
   };
 
   const paintKey = () => {

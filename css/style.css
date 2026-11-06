@@ -1175,7 +1175,15 @@ textarea.input { resize: vertical; min-height: 84px; }
 @keyframes fx-fade { from { opacity: 0; transform: translateY(4px); } }
 
 /* 追加機能のボタン */
-.range-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.range-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+/* 音域を調べる（追加機能）：目立たせる。音域が未入力なら色を付けて、さらに目立たせる */
+.pill.pill-lookup { color: var(--accent); background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.pill.pill-lookup.urgent { color: var(--on-accent); background: var(--accent); border-color: var(--accent); box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent); }
+.pill.pill-lookup.urgent:active { background: var(--accent-2); }
+/* Web で音域を検索：最後の手段なので控えめに */
+.range-web { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px; font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+.range-web .ic { width: 14px; height: 14px; }
+.range-web:active { color: var(--text-2); }
 .range-actions.d-ractions { margin: -6px 0 16px; }
 
 /* 候補リストの見出し・曲の候補 */
