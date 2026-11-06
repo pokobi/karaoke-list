@@ -1437,16 +1437,19 @@ function openForm(song = null) {
     if (a && navigator.onLine) songsOfArtist(a).catch(() => {});
   };
   form.artist.addEventListener('change', prefetchSongs);
-  setupArtistSuggest(form.artist, el('#fm-artist-list'), () => {
-    prefetchSongs();
-    form.title.focus();
-  });
-  setupTitleSuggest(form.title, el('#fm-title-list'), () => form.artist.value, (s) => {
+  const titleSuggest = setupTitleSuggest(form.title, el('#fm-title-list'), () => form.artist.value, (s) => {
     if (s.artwork) {
       draft.artwork = s.artwork;
       paintArt();
     }
   });
+  // アーティストが決まったら、キーボードを閉じて、そのアーティストの曲名の候補を出す
+  const afterArtist = () => {
+    prefetchSongs();
+    form.artist.blur();
+    if (form.artist.value.trim()) titleSuggest.open();
+  };
+  setupArtistSuggest(form.artist, el('#fm-artist-list'), afterArtist);
 
   form.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.target.tagName === 'TEXTAREA' || e.isComposing) return;
@@ -1456,7 +1459,7 @@ function openForm(song = null) {
     } else if (e.target === form.artist) {
       if (!e.defaultPrevented) {
         e.preventDefault();
-        form.title.focus();
+        afterArtist();
       }
     } else if (e.target.matches('input')) {
       e.preventDefault();
@@ -1592,7 +1595,10 @@ function openForm(song = null) {
       draft = { ...emptySong(), artist, tags: [] };
       fill();
       el('.sheet-body').scrollTop = 0;
-      form.title.focus();
+      // キーボードは閉じたまま、同じアーティストの曲名の候補を出す
+      document.activeElement?.blur?.();
+      // 登録した曲がデータに反映されてから出す（候補に「登録済み」と付けるため）
+      setTimeout(() => titleSuggest.open(), 80);
     } else {
       sheet.close();
     }
@@ -1607,16 +1613,35 @@ function combobox(input, list, { idPrefix, onPick }) {
   let items = [];
   let active = -1;
   let renderFn = null;
-  const hide = () => {
+  // pinned：入力欄にフォーカスがなくても（キーボードを閉じたまま）候補を出している状態。
+  // このときは、候補と入力欄以外の場所をタップしたら閉じる
+  let pinned = false;
+  const onOutside = (e) => {
+    if (!list.contains(e.target) && e.target !== input) hide();
+  };
+  const pin = () => {
+    if (pinned) return;
+    pinned = true;
+    document.addEventListener('pointerdown', onOutside, true);
+  };
+  const unpin = () => {
+    if (!pinned) return;
+    pinned = false;
+    document.removeEventListener('pointerdown', onOutside, true);
+  };
+  const canShow = () => pinned || document.activeElement === input;
+  function hide() {
     list.hidden = true;
     active = -1;
     input.setAttribute('aria-expanded', 'false');
     input.removeAttribute('aria-activedescendant');
-  };
-  const show = (next, render) => {
+    unpin();
+  }
+  const show = (next, render, { pin: keep = false } = {}) => {
     items = next;
     renderFn = render;
-    if (document.activeElement !== input || !items.length) return hide();
+    if (keep) pin();
+    if (!canShow() || !items.length) return hide();
     if (active >= items.length) active = -1;
     list.innerHTML = render(items, active, idPrefix);
     list.hidden = false;
@@ -1628,7 +1653,10 @@ function combobox(input, list, { idPrefix, onPick }) {
     hide();
     onPick(it);
   };
-  input.addEventListener('blur', () => setTimeout(hide, 120));
+  // 閉じるのは、少し待ってもフォーカスが戻っていないときだけ（すぐ別の操作で開き直すことがあるため）
+  input.addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement !== input && !pinned) hide();
+  }, 120));
   input.addEventListener('keydown', (e) => {
     if (list.hidden || e.isComposing || !items.length) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -1649,8 +1677,9 @@ function combobox(input, list, { idPrefix, onPick }) {
     if (li) choose(items[+li.dataset.i]);
   });
   // 選べない一行メッセージ（読み込み中など）を出す
-  const message = (text) => {
-    if (document.activeElement !== input) return hide();
+  const message = (text, { pin: keep = false } = {}) => {
+    if (keep) pin();
+    if (!canShow()) return hide();
     items = [];
     list.innerHTML = `<li class="ac-head" role="presentation">${esc(text)}</li>`;
     list.hidden = false;
@@ -1732,6 +1761,7 @@ function setupTitleSuggest(input, list, getArtist, onPick) {
     idPrefix: 'ac-title',
     onPick: (s) => {
       input.value = s.title;
+      input.blur();
       onPick?.(s);
     },
   });
@@ -1746,14 +1776,14 @@ function setupTitleSuggest(input, list, getArtist, onPick) {
         ${done ? '<span class="ac-count">登録済み</span>' : ''}</li>`;
     }).join('');
   };
-  const load = () => {
+  const load = ({ pin = false } = {}) => {
     clearTimeout(timer);
     const artist = getArtist().trim();
     const q = input.value.trim();
     if (!artist || !navigator.onLine) return cb.hide();
     const key = `${artist}\u0001${q}`;
-    if (key === loadedKey) return cb.show(songs, render);
-    if (!songs.length) cb.message('iTunes で曲を探しています…');
+    if (key === loadedKey) return cb.show(songs, render, { pin });
+    if (!songs.length || pin) cb.message('iTunes で曲を探しています…', { pin });
     timer = setTimeout(async () => {
       ctrl?.abort();
       ctrl = new AbortController();
@@ -1763,17 +1793,19 @@ function setupTitleSuggest(input, list, getArtist, onPick) {
         if (found.length) loadedKey = key;
         songs = found.slice(0, 8);
         cb.reset();
-        cb.show(songs, render);
+        cb.show(songs, render, { pin });
       } catch (e) {
         if (e.name !== 'AbortError') console.warn('title suggest', e);
       }
     }, q ? 300 : 30);
   };
-  input.addEventListener('focus', load);
+  input.addEventListener('focus', () => load());
   input.addEventListener('input', () => {
     cb.reset();
     load();
   });
+  // キーボードを閉じたまま、そのアーティストの曲名の候補を出す
+  return { open: () => load({ pin: true }) };
 }
 
 // ---- ジャケット画像 ---------------------------------------------------
