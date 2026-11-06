@@ -428,6 +428,13 @@ textarea.input { resize: vertical; min-height: 84px; }
 .song-sub { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12px; color: var(--text-2); line-height: 1.3; }
 .song-sub .a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .song-sub .tags { display: contents; }
+.song-sub .cnt { flex: none; display: inline-flex; align-items: center; gap: 1px; font-size: .92em; font-weight: 650; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.song-sub .cnt .ic { width: 1.05em; height: 1.05em; }
+/* 行が狭いときは、アーティスト名より先にタグを縮める */
+.song-sub .tag { flex-shrink: 1000; min-width: 3em; }
+.song-sub .tag.more { flex-shrink: 0; min-width: 0; }
+/* 画面には出さず、読み上げにだけ使う文字 */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .tag { flex: none; font-size: 10.5px; font-weight: 600; line-height: 16px; padding: 0 5px; border-radius: 5px; background: var(--accent-weak); color: var(--accent); max-width: 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag.more { background: var(--surface-3); color: var(--text-2); }
 @media (hover: hover) {
@@ -677,6 +684,8 @@ textarea.input { resize: vertical; min-height: 84px; }
 .km-btn:active { background: var(--surface-3); }
 .km-btn[aria-pressed="true"] { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-weak); color: var(--accent); }
 .km-btn[aria-pressed="true"] .ic { color: var(--accent); }
+.km-plug { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.km-btn.km-wide { width: 100%; padding: 0 10px; font-size: 13.5px; }
 
 .rec-btn {
   width: 100%;
@@ -1020,6 +1029,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 
 /* 追加機能のボタン */
 .range-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.range-actions.d-ractions { margin: -6px 0 16px; }
 
 /* 候補リストの見出し・曲の候補 */
 .ac-list li.ac-head { min-height: 0; padding: 8px 10px 4px; font-size: 11.5px; font-weight: 700; color: var(--text-3); background: none; cursor: default; }

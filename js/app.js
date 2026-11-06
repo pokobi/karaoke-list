@@ -276,7 +276,7 @@ function createItem(id) {
     <span class="art" aria-hidden="true">${icon('music')}<img alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" hidden></span>
     <button type="button" class="song-main">
       <span class="song-title">${icon('star-fill', 'fav')}<span class="t"></span></span>
-      <span class="song-sub"><span class="a"></span><span class="tags"></span></span>
+      <span class="song-sub"><span class="a"></span><span class="cnt" hidden><span class="vh">歌った回数</span>${icon('mic')}<span class="cn"></span><span class="vh">回</span></span><span class="tags"></span></span>
     </button>
     <div class="range" role="group" aria-label="音域">
       ${RANGE_FIELDS.map((f) => `<div class="rc"><span class="rl">${f.short}</span><span class="rv"></span></div>`).join('')}
@@ -298,6 +298,8 @@ function createItem(id) {
     t: $('.t', el),
     a: $('.a', el),
     tags: $('.tags', el),
+    cnt: $('.cnt', el),
+    cn: $('.cn', el),
     fav: $('.fav', el),
     rv: $$('.rv', el),
     kv: $('.kv', el),
@@ -309,7 +311,7 @@ function createItem(id) {
 }
 
 function updateItem(it, s) {
-  const sig = [s.title, s.artist, s.favorite, s.tags.join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork].join('\u0001');
+  const sig = [s.title, s.artist, s.favorite, s.singCount, s.tags.join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork].join('\u0001');
   if (sig === it.sig) return;
   it.sig = sig;
   if (s.artwork) {
@@ -324,6 +326,8 @@ function updateItem(it, s) {
   }
   it.t.textContent = s.title;
   it.a.textContent = s.artist;
+  it.cnt.hidden = !s.singCount;
+  it.cn.textContent = s.singCount ? String(s.singCount) : '';
   it.fav.style.display = s.favorite ? '' : 'none';
   it.swR.textContent = s.favorite ? '解除' : 'お気に入り';
   const shown = s.tags.slice(0, 2);
@@ -722,6 +726,9 @@ function openKeyMenu(id, anchor) {
     } else if (b.dataset.act === 'voice') {
       closePopover();
       openSettings();
+    } else if (b.dataset.plugin != null) {
+      closePopover();
+      runRangeAction(+b.dataset.plugin, songPluginCtx(s.id));
     }
   });
 }
@@ -742,7 +749,8 @@ function paintKeyMenu() {
       <button type="button" class="km-btn" data-oct="-1"${s.octave === -1 ? ' aria-pressed="true"' : ''}>${icon('octave')}<span>オク下</span></button>
       <button type="button" class="km-btn" data-oct="1"${s.octave === 1 ? ' aria-pressed="true"' : ''}>${icon('octave', 'flip')}<span>オク上</span></button>
     </div>
-    <div class="km-rec">${recommendHTML(s, { compact: true })}</div>`;
+    <div class="km-rec">${recommendHTML(s, { compact: true })}</div>
+    ${rangeActions().length ? `<div class="km-plug">${rangeActions().map((a, i) => `<button type="button" class="km-btn km-wide" data-plugin="${i}">${icon(a.icon ?? 'search')}<span>${esc(a.label)}</span></button>`).join('')}</div>` : ''}`;
 }
 
 // ---- 曲の詳細 ---------------------------------------------------------
@@ -836,6 +844,7 @@ function detailHTML(s, d) {
         <tbody>${rows}</tbody>
       </table>
       ${pluginDetailHTML(s)}
+      ${rangeActionsHTML('d-ractions')}
       <div class="d-stats">
         <div class="stat"><span class="sl">歌った回数</span><span class="sv">${s.singCount}<small>回</small></span></div>
         <div class="stat"><span class="sl">最終歌唱日</span><span class="sv">${s.lastSungAt ? fmtDate(s.lastSungAt) : '—'}</span></div>
@@ -862,6 +871,10 @@ async function onDetailClick(e) {
   if (!s) return;
   if (b.dataset.k != null) {
     setTotalKey(s.id, +b.dataset.k);
+    return;
+  }
+  if (b.dataset.plugin != null) {
+    runRangeAction(+b.dataset.plugin, songPluginCtx(s.id));
     return;
   }
   if (b.dataset.dtag != null) {
@@ -1303,10 +1316,50 @@ function formHTML(isNew, openMore) {
 // 追加機能が用意した、音域欄のボタン
 const rangeActions = () => plugins.flatMap((p) => (p.rangeAction ? [p.rangeAction] : []));
 
-function rangeActionsHTML() {
+function rangeActionsHTML(extraClass = '') {
   const actions = rangeActions();
   if (!actions.length) return '';
-  return `<div class="range-actions">${actions.map((a, i) => `<button type="button" class="pill" data-plugin="${i}">${icon(a.icon ?? 'search')}${esc(a.label)}</button>`).join('')}</div>`;
+  return `<div class="range-actions${extraClass ? ` ${extraClass}` : ''}">${actions.map((a, i) => `<button type="button" class="pill" data-plugin="${i}">${icon(a.icon ?? 'search')}${esc(a.label)}</button>`).join('')}</div>`;
+}
+
+async function runRangeAction(index, ctx) {
+  const action = rangeActions()[index];
+  try {
+    await action?.run(ctx);
+  } catch (err) {
+    console.error(err);
+    toast('うまく動きませんでした');
+  }
+}
+
+// 追加機能に渡す、登録済みの曲を操作するための窓口。音域を入れたら、その場で保存する
+function songPluginCtx(id) {
+  const get = () => state.byId.get(id);
+  return {
+    saves: true,
+    get artist() { return get()?.artist ?? ''; },
+    get title() { return get()?.title ?? ''; },
+    current: () => {
+      const s = get();
+      return Object.fromEntries(RANGE_FIELDS.map((f) => [f.id, s?.[f.id] ?? null]));
+    },
+    applyRange: (range, extPatch) => {
+      const s = get();
+      if (!s) return;
+      const prev = { ext: s.ext ?? null };
+      const next = {};
+      for (const f of RANGE_FIELDS) {
+        prev[f.id] = s[f.id] ?? null;
+        if (range[f.id] !== undefined) next[f.id] = range[f.id];
+      }
+      if (extPatch) next.ext = { ...(s.ext ?? {}), ...extPatch };
+      state.store.updateSong(id, next);
+      toast(`「${s.title}」の音域を保存しました`, {
+        action: '元に戻す',
+        onAction: () => state.store.updateSong(id, prev),
+      });
+    },
+  };
 }
 
 // 追加機能が詳細画面に足す表示
@@ -1477,13 +1530,7 @@ function openForm(song = null) {
       return;
     }
     if (b.dataset.plugin != null) {
-      const action = rangeActions()[+b.dataset.plugin];
-      try {
-        await action?.run(pluginCtx);
-      } catch (err) {
-        console.error(err);
-        toast('うまく動きませんでした');
-      }
+      await runRangeAction(+b.dataset.plugin, pluginCtx);
       return;
     }
     if (b.dataset.field) {
