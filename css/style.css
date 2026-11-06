@@ -364,17 +364,47 @@ textarea.input { resize: vertical; min-height: 84px; }
   border-bottom: 1px solid var(--line);
 }
 .list:empty { display: none; }
-.song {
+/* 行の外枠。中身（.song-inner）を横に動かすと、下の帯（.swipe-bg）が見える */
+.song { position: relative; overflow: hidden; }
+.song-inner, .song.skeleton {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 60px;
-  padding: 5px max(10px, env(safe-area-inset-right)) 5px max(var(--gutter), env(safe-area-inset-left));
-  position: relative;
+  min-height: 62px;
+  padding: 6px max(10px, env(safe-area-inset-right)) 6px max(var(--gutter), env(safe-area-inset-left));
 }
+.song-inner {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  transition: transform .22s cubic-bezier(.2, .85, .25, 1), background-color .15s;
+}
+.song.swiping .song-inner { transition: none; }
+.swipe-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 750;
+  visibility: hidden;
+}
+.song.swiping .swipe-bg, .song.settling .swipe-bg { visibility: visible; }
+.song[data-swipe="right"] .swipe-bg { background: #16a34a; }
+.song[data-swipe="left"] .swipe-bg { background: #e0930b; }
+.song[data-swipe="right"] .sw-r, .song[data-swipe="left"] .sw-l { visibility: hidden; }
+.sw-l, .sw-r { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 44px; opacity: .6; transition: opacity .12s, transform .12s; }
+.sw-l .ic, .sw-r .ic { width: 20px; height: 20px; }
+.song.armed .sw-l, .song.armed .sw-r { opacity: 1; transform: scale(1.08); }
 .song + .song::before {
   content: "";
   position: absolute;
+  z-index: 2;
   top: 0;
   left: max(var(--gutter), env(safe-area-inset-left));
   right: 0;
@@ -1030,6 +1060,13 @@ textarea.input { resize: vertical; min-height: 84px; }
 .hist-more { padding: 16px 4px; text-align: center; color: var(--text-3); font-size: 13px; }
 
 /* ---- 画面幅ごとの調整 -------------------------------------------------- */
+@media (max-width: 380px) {
+  .art { width: 36px; height: 36px; }
+  .kb { width: 27px; }
+  .kv { width: 40px; }
+  .tool-txt { display: none; }
+}
+
 @media (max-width: 359px) {
   :root { --gutter: 10px; }
   .range { width: 78px; }
@@ -1042,7 +1079,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 
 @media (min-width: 600px) {
   .list { margin: 4px var(--gutter) 0; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
-  .song { padding-left: 14px; padding-right: 10px; }
+  .song-inner { padding-left: 14px; padding-right: 10px; }
   .song + .song::before { left: 14px; }
   .range { width: 96px; }
   .rl { width: 22px; font-size: 10px; }
@@ -1085,7 +1122,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 }
 
 /* ---- 一覧の文字の大きさ（この端末の設定） --------------------------------- */
-:root[data-density="compact"] .song { min-height: 50px; padding-top: 3px; padding-bottom: 3px; gap: 6px; }
+:root[data-density="compact"] .song-inner { min-height: 50px; padding-top: 3px; padding-bottom: 3px; gap: 6px; }
 :root[data-density="compact"] .song-title { font-size: 13.5px; }
 :root[data-density="compact"] .song-title .t { -webkit-line-clamp: 1; }
 :root[data-density="compact"] .song-sub { font-size: 11px; }
@@ -1095,7 +1132,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 :root[data-density="compact"] .keyctl { height: 40px; }
 :root[data-density="compact"] .kv { font-size: 13px; }
 :root[data-density="compact"] .art { width: 34px; height: 34px; }
-:root[data-density="large"] .song { min-height: 70px; padding-top: 7px; padding-bottom: 7px; }
+:root[data-density="large"] .song-inner { min-height: 70px; padding-top: 7px; padding-bottom: 7px; }
 :root[data-density="large"] .song-title { font-size: 17px; }
 :root[data-density="large"] .song-sub { font-size: 13.5px; }
 :root[data-density="large"] .range { grid-template-rows: repeat(3, 19px); width: 94px; }
@@ -1113,9 +1150,10 @@ textarea.input { resize: vertical; min-height: 84px; }
 .list.selecting .sel-mark { display: grid; }
 .list.selecting .keyctl { display: none; }
 .list.selecting .song { cursor: pointer; -webkit-user-select: none; user-select: none; }
+.list.selecting .song-inner { touch-action: auto; }
 .song.selected .sel-mark { background: var(--accent); border-color: var(--accent); }
 .song.selected .sel-mark .ic { opacity: 1; }
-.list.selecting .song.selected { background: var(--accent-weak); }
+.list.selecting .song.selected .song-inner { background: var(--accent-weak); }
 .selbar {
   position: fixed;
   left: 0;

@@ -31,9 +31,10 @@ const devicePrefs = (() => {
       theme: p.theme === 'light' || p.theme === 'dark' ? p.theme : 'system',
       density: p.density === 'compact' || p.density === 'large' ? p.density : 'normal',
       accent: typeof p.accent === 'string' ? p.accent : 'indigo',
+      swipe: p.swipe !== false,
     };
   } catch {
-    return { theme: 'system', density: 'normal', accent: 'indigo' };
+    return { theme: 'system', density: 'normal', accent: 'indigo', swipe: true };
   }
 })();
 
@@ -269,6 +270,8 @@ function renderLoadError() {
 
 function createItem(id) {
   const el = h(`<li class="song" data-id="${esc(id)}">
+    <div class="swipe-bg" aria-hidden="true"><span class="sw-l">${icon('mic')}歌った！</span><span class="sw-r">${icon('star-fill')}<span class="sw-r-t">お気に入り</span></span></div>
+    <div class="song-inner">
     <span class="sel-mark" aria-hidden="true">${icon('check')}</span>
     <span class="art" aria-hidden="true">${icon('music')}<img alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" hidden></span>
     <button type="button" class="song-main">
@@ -282,6 +285,7 @@ function createItem(id) {
       <button type="button" class="kb k-down" aria-label="キーを1下げる">${icon('minus')}</button>
       <button type="button" class="kv"></button>
       <button type="button" class="kb k-up" aria-label="キーを1上げる">${icon('plus')}</button>
+    </div>
     </div>
   </li>`);
   const art = $('.art img', el);
@@ -297,6 +301,7 @@ function createItem(id) {
     fav: $('.fav', el),
     rv: $$('.rv', el),
     kv: $('.kv', el),
+    swR: $('.sw-r-t', el),
     kd: $('.k-down', el),
     ku: $('.k-up', el),
     sig: '',
@@ -320,6 +325,7 @@ function updateItem(it, s) {
   it.t.textContent = s.title;
   it.a.textContent = s.artist;
   it.fav.style.display = s.favorite ? '' : 'none';
+  it.swR.textContent = s.favorite ? '解除' : 'お気に入り';
   const shown = s.tags.slice(0, 2);
   it.tags.innerHTML = shown.map((t) => `<span class="tag">${esc(t)}</span>`).join('') + (s.tags.length > 2 ? `<span class="tag more">+${s.tags.length - 2}</span>` : '');
   RANGE_FIELDS.forEach((f, i) => {
@@ -500,6 +506,7 @@ function bindStatic() {
   $('#btn-random').addEventListener('click', openRandom);
   $('#btn-select').addEventListener('click', () => setSelectMode(!state.select.on));
   $('#selbar').addEventListener('click', onSelbarClick);
+  setupSwipe($('#list'));
   $('#fab').addEventListener('click', () => openForm());
 
   $('#list').addEventListener('click', (e) => {
@@ -1983,6 +1990,7 @@ function openSettings() {
       updateView({ showArt: e.target.checked });
       paintSettings();
     }
+    if (e.target.dataset.role === 'swipe') setDevicePref({ swipe: e.target.checked });
   });
 }
 
@@ -2005,6 +2013,8 @@ function paintSettings() {
         <span class="set-label">一覧の文字の大きさ</span>
         ${seg('density', [['compact', 'コンパクト'], ['normal', '標準'], ['large', '大きめ']], devicePrefs.density)}
         <label class="switch-row"><span>一覧にジャケット画像を表示</span><input type="checkbox" class="switch" data-role="show-art"${state.view.showArt ? ' checked' : ''}></label>
+        <label class="switch-row"><span>一覧のスワイプ操作</span><input type="checkbox" class="switch" data-role="swipe"${devicePrefs.swipe ? ' checked' : ''}></label>
+        <p class="hint">曲の行を右へスワイプすると「歌った！」を記録し、左へスワイプするとお気に入りを切り替えます（スマホなど指で操作するときだけ）。</p>
       </section>
       <section class="set-sec">
         <h4>表示（すべての端末で共通）</h4>
@@ -2443,6 +2453,94 @@ function paintBulkTags() {
     const cls = n && n === sel.length ? ' on' : n ? ' partial' : '';
     return `<button type="button" class="chip${cls}" data-btag="${esc(t)}" aria-pressed="${n === sel.length && n > 0}">${esc(t)}</button>`;
   }).join('') + `<button type="button" class="chip add" data-act="new">${icon('plus')}新しいタグ</button>`;
+}
+
+// ---- 一覧のスワイプ操作 -----------------------------------------------
+// 右へスワイプ：「歌った！」を記録／左へスワイプ：お気に入りの切り替え。
+// 指で触ったときだけ動かす（マウスでは動かさない）。縦のスクロールはブラウザに任せる。
+
+const SWIPE_THRESHOLD = 72;
+
+function toggleFavorite(id) {
+  const s = state.byId.get(id);
+  if (!s) return;
+  const prev = s.favorite;
+  state.store.updateSong(id, { favorite: !prev });
+  toast(prev ? `「${s.title}」をお気に入りから外しました` : `「${s.title}」をお気に入りにしました`, {
+    action: '元に戻す',
+    onAction: () => state.store.updateSong(id, { favorite: prev }),
+  });
+}
+
+function setupSwipe(ul) {
+  let st = null;
+  let suppressClick = false;
+  ul.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' || state.select.on || !devicePrefs.swipe) return;
+    const li = e.target.closest('.song');
+    if (!li || li.classList.contains('skeleton')) return;
+    st = { li, inner: $('.song-inner', li), id: li.dataset.id, x0: e.clientX, y0: e.clientY, dx: 0, active: false, armed: false, pid: e.pointerId };
+  });
+  ul.addEventListener('pointermove', (e) => {
+    if (!st || e.pointerId !== st.pid) return;
+    const dx = e.clientX - st.x0;
+    const dy = e.clientY - st.y0;
+    if (!st.active) {
+      // 縦の動きが先に大きくなったら、スクロールとみなして何もしない
+      if (Math.abs(dy) > 8 && Math.abs(dy) >= Math.abs(dx)) {
+        st = null;
+        return;
+      }
+      if (Math.abs(dx) < 12) return;
+      st.active = true;
+      closePopover();
+      st.li.classList.remove('settling');
+      st.li.classList.add('swiping');
+      try {
+        st.li.setPointerCapture(e.pointerId);
+      } catch { /* 取れなくても動く */ }
+    }
+    const mag = Math.abs(dx);
+    // しきい値を超えたら、指の動きより少し重く動かす
+    const eased = mag <= SWIPE_THRESHOLD ? mag : SWIPE_THRESHOLD + (mag - SWIPE_THRESHOLD) * 0.35;
+    const x = Math.sign(dx) * Math.min(eased, st.li.clientWidth * 0.45);
+    st.dx = dx;
+    st.inner.style.transform = `translateX(${x}px)`;
+    st.li.dataset.swipe = dx > 0 ? 'right' : 'left';
+    const armed = mag >= SWIPE_THRESHOLD;
+    if (armed !== st.armed) {
+      st.armed = armed;
+      st.li.classList.toggle('armed', armed);
+      if (armed) navigator.vibrate?.(8);
+    }
+  });
+  const end = (e) => {
+    if (!st || (e && e.pointerId !== st.pid)) return;
+    const { li, inner, active, armed, dx, id } = st;
+    st = null;
+    if (!active) return;
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 350);
+    li.classList.remove('swiping');
+    li.classList.add('settling');
+    inner.style.transform = '';
+    setTimeout(() => {
+      li.classList.remove('settling', 'armed');
+      delete li.dataset.swipe;
+    }, 240);
+    if (!armed) return;
+    if (dx > 0) markSung(id);
+    else toggleFavorite(id);
+  };
+  ul.addEventListener('pointerup', end);
+  ul.addEventListener('pointercancel', end);
+  // スワイプした直後の「クリック」で詳細画面やキーの操作が動かないようにする
+  ul.addEventListener('click', (e) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
 }
 
 // ---- CSV --------------------------------------------------------------
