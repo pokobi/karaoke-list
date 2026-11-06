@@ -1,5 +1,5 @@
 // バックアップ用 CSV の書き出し・読み込み。
-import { noteName, parseNote, isNote } from './notes.js';
+import { noteName, parseNote, isNote, machineKey, OCTAVE_LABELS } from './notes.js';
 
 export const COLUMNS = [
   { id: 'artist', label: 'アーティスト' },
@@ -8,6 +8,7 @@ export const COLUMNS = [
   { id: 'chestHigh', label: '地声最高音', type: 'note' },
   { id: 'falsettoHigh', label: '裏声最高音', type: 'note' },
   { id: 'key', label: 'キー', type: 'int' },
+  { id: 'octave', label: 'オクターブ', type: 'octave' },
   { id: 'favorite', label: 'お気に入り', type: 'bool' },
   { id: 'tags', label: 'タグ', type: 'tags' },
   { id: 'score', label: '採点', type: 'num' },
@@ -47,7 +48,10 @@ function cell(song, col) {
     case 'bool': return v ? '1' : '';
     case 'tags': return (v ?? []).join('|');
     case 'date': return formatDateTime(v);
-    case 'int': return col.id === 'singCount' && !v ? '' : String(v ?? '');
+    case 'octave': return OCTAVE_LABELS[v] ?? '';
+    case 'int':
+      if (col.id === 'key') return String(machineKey(song.key ?? 0, song.octave ?? 0));
+      return col.id === 'singCount' && !v ? '' : String(v ?? '');
     default: return v ?? '';
   }
 }
@@ -137,6 +141,9 @@ export function rowsToSongs(rows) {
           s[col.id] = /^https:\/\/\S+$/i.test(raw) ? raw : null;
           if (raw && !s[col.id]) errors.push(`${line}行目: ${col.label}「${raw.slice(0, 40)}」を読み取れません`);
           break;
+        case 'octave':
+          s[col.id] = /下|down|^-1$/i.test(raw) ? -1 : /上|up|^\+?1$/i.test(raw) ? 1 : 0;
+          break;
         case 'bool':
           s[col.id] = /^(1|true|yes|はい|○|◯|★)$/i.test(raw);
           break;
@@ -153,6 +160,9 @@ export function rowsToSongs(rows) {
       }
     });
     if (!s.title) { errors.push(`${line}行目: 曲名が空のため読み飛ばしました`); return; }
+    // 「オクターブ」の列があるときの「キー」はカラオケ機のキーなので、実際のキーに直す。
+    // 列がない古い CSV の「キー」は実際のキーとして読み、オクターブは値から推測する
+    if (s.octave !== undefined) s.key = (s.key ?? 0) + 12 * s.octave;
     s.artist = s.artist ?? '';
     songs.push(s);
   });

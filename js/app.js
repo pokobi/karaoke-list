@@ -1,5 +1,8 @@
 import { FIREBASE_CONFIG } from './config.js';
-import { RANGE_FIELDS, KEY_MIN, KEY_MAX, OCTAVE_DOWN, isNote, noteName, formatKey, keyTone, clampKey, recommendKey } from './notes.js';
+import {
+  RANGE_FIELDS, KEY_MIN, KEY_MAX, isNote, noteName, formatKey, keyTone, clampKey, recommendKey,
+  splitKey, describeKey, toggleOctave,
+} from './notes.js';
 import { collator, normalize } from './text.js';
 import {
   SORTS, emptySong, normalizeSong, toPayload, dupKey, sanitizeView, defaultView, applyView, hasRangeFilter,
@@ -63,6 +66,18 @@ const fmtDate = (ms) => {
 };
 const fmtScore = (v) => (v == null ? '' : String(Math.round(v * 1000) / 1000));
 const keyText = (k) => formatKey(k);
+// 実際のキー（原曲からのずれ）を、オク下・オク上つきの表示にする（おすすめキーなど）
+const totalKeyText = (total) => describeKey(total, splitKey(total).octave).text;
+
+// キーの欄（一覧・詳細・フォーム共通）。オク下・オク上のときは 2 段で出す
+function paintKv(el, key, octave) {
+  const d = describeKey(key, octave);
+  el.innerHTML = d.oct ? `<span class="kv-oct">${d.oct}</span><span class="kv-num">${d.main}</span>` : `<span class="kv-num">${d.main}</span>`;
+  el.dataset.tone = keyTone(d.machine);
+  el.dataset.oct = d.octave < 0 ? 'down' : d.octave > 0 ? 'up' : '';
+  el.classList.toggle('has-oct', !!d.oct);
+  return d;
+}
 
 // ---- 起動 -------------------------------------------------------------
 
@@ -254,7 +269,7 @@ function createItem(id) {
 }
 
 function updateItem(it, s) {
-  const sig = [s.title, s.artist, s.favorite, s.tags.join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.artwork].join('\u0001');
+  const sig = [s.title, s.artist, s.favorite, s.tags.join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork].join('\u0001');
   if (sig === it.sig) return;
   it.sig = sig;
   if (s.artwork) {
@@ -281,10 +296,8 @@ function updateItem(it, s) {
     el.classList.toggle('long', text.length >= 7);
     el.classList.toggle('xlong', text.length >= 9);
   });
-  it.kv.textContent = keyText(s.key);
-  it.kv.dataset.tone = keyTone(s.key);
-  it.kv.classList.toggle('oct', s.key === OCTAVE_DOWN);
-  it.kv.setAttribute('aria-label', `キー ${keyText(s.key)}。リセットやオク下のメニューを開く`);
+  const kd = paintKv(it.kv, s.key, s.octave);
+  it.kv.setAttribute('aria-label', `キー ${kd.text}${kd.oct ? `（実際 ${kd.actual}）` : ''}。原キー・オク下・オク上のメニューを開く`);
   it.kd.disabled = s.key <= KEY_MIN;
   it.ku.disabled = s.key >= KEY_MAX;
 }
@@ -592,17 +605,31 @@ function openSortMenu(anchor) {
 
 // ---- キー -------------------------------------------------------------
 
-function setKey(id, key) {
+function setKey(id, key, octave) {
   const s = state.byId.get(id);
   if (!s) return;
   const k = clampKey(key);
-  if (k === s.key) return;
+  const o = octave ?? s.octave;
+  if (k === s.key && o === s.octave) return;
   s.key = k;
+  s.octave = o;
   holdOrder();
   render();
   paintDetail();
   paintKeyMenu();
-  state.store.updateSong(id, { key: k });
+  state.store.updateSong(id, { key: k, octave: o });
+}
+
+// おすすめキーなど「実際のキー」で指定するとき。機械で設定できない分はオク下・オク上に回す
+function setTotalKey(id, total) {
+  setKey(id, total, splitKey(clampKey(total)).octave);
+}
+
+function toggleOct(id, target) {
+  const s = state.byId.get(id);
+  if (!s) return;
+  const r = toggleOctave(s.key, s.octave, target);
+  setKey(id, r.key, r.octave);
 }
 
 function recommendHTML(s, { compact = false } = {}) {
@@ -613,10 +640,10 @@ function recommendHTML(s, { compact = false } = {}) {
   if (!rec) return '<p class="rec-note">音域が未入力のため、おすすめキーを計算できません</p>';
   const note = rec.fits ? '' : `<p class="rec-note warn">音域に収まりません（${rec.short}半音分）。一番近いキーです</p>`;
   if (rec.key === s.key) {
-    return `<div class="rec-ok">${icon('check')}<span>おすすめキー（<b class="tone-${keyTone(rec.key)}">${keyText(rec.key)}</b>）です</span></div>${note}`;
+    return `<div class="rec-ok">${icon('check')}<span>おすすめキー（<b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b>）です</span></div>${note}`;
   }
   return `<button type="button" class="rec-btn" data-k="${rec.key}">
-      <span class="rec-l">おすすめ</span><b class="tone-${keyTone(rec.key)}">${keyText(rec.key)}</b><span class="rec-go">${compact ? '' : 'に変更'}${icon('chevron-right')}</span>
+      <span class="rec-l">おすすめ</span><b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b><span class="rec-go">${compact ? '' : 'に変更'}${icon('chevron-right')}</span>
     </button>${note}`;
 }
 
@@ -637,7 +664,10 @@ function openKeyMenu(id, anchor) {
     const s = state.byId.get(state.keyPop.id);
     if (!s) return;
     if (b.dataset.k != null) {
-      setKey(s.id, +b.dataset.k);
+      setTotalKey(s.id, +b.dataset.k);
+      closePopover();
+    } else if (b.dataset.oct != null) {
+      toggleOct(s.id, +b.dataset.oct);
       closePopover();
     } else if (b.dataset.act === 'voice') {
       closePopover();
@@ -654,11 +684,13 @@ function paintKeyMenu() {
     closePopover();
     return;
   }
+  const kd = describeKey(s.key, s.octave);
   $('.keymenu', kp.el).innerHTML = `
-    <div class="km-head"><span class="km-title">キー</span><b class="km-cur tone-${keyTone(s.key)}">${keyText(s.key)}</b></div>
+    <div class="km-head"><span class="km-title">キー</span><span class="km-curs"><b class="km-cur">${kd.oct ? `<span class="km-oct" data-oct="${kd.octave < 0 ? 'down' : 'up'}">${kd.oct}</span> ` : ''}<span class="tone-${keyTone(kd.machine)}">${kd.main}</span></b>${kd.oct ? `<span class="km-actual">実際 ${kd.actual}</span>` : ''}</span></div>
     <div class="km-row">
-      <button type="button" class="km-btn" data-k="0"${s.key === 0 ? ' aria-pressed="true"' : ''}>${icon('reset')}<span>原キー</span></button>
-      <button type="button" class="km-btn" data-k="${OCTAVE_DOWN}"${s.key === OCTAVE_DOWN ? ' aria-pressed="true"' : ''}>${icon('octave')}<span>オク下</span></button>
+      <button type="button" class="km-btn" data-k="0"${s.key === 0 && !s.octave ? ' aria-pressed="true"' : ''}>${icon('reset')}<span>原キー</span></button>
+      <button type="button" class="km-btn" data-oct="-1"${s.octave === -1 ? ' aria-pressed="true"' : ''}>${icon('octave')}<span>オク下</span></button>
+      <button type="button" class="km-btn" data-oct="1"${s.octave === 1 ? ' aria-pressed="true"' : ''}>${icon('octave', 'flip')}<span>オク上</span></button>
     </div>
     <div class="km-rec">${recommendHTML(s, { compact: true })}</div>`;
 }
@@ -692,14 +724,15 @@ function paintDetail() {
     d.sig = sig;
     root.innerHTML = detailHTML(s, d);
   }
-  const kv = $('[data-role="kv"]', root);
-  kv.textContent = keyText(s.key);
-  kv.dataset.tone = keyTone(s.key);
-  kv.classList.toggle('oct', s.key === OCTAVE_DOWN);
+  const kd = paintKv($('[data-role="kv"]', root), s.key, s.octave);
+  const actual = $('[data-role="actual"]', root);
+  actual.hidden = !kd.oct;
+  actual.innerHTML = kd.oct ? `実際のキー（原曲から）：<b class="tone-${keyTone(s.key)}">${kd.actual}</b>` : '';
   $('[data-act="k-down"]', root).disabled = s.key <= KEY_MIN;
   $('[data-act="k-up"]', root).disabled = s.key >= KEY_MAX;
-  $('[data-act="k-reset"]', root).setAttribute('aria-pressed', String(s.key === 0));
-  $('[data-act="k-oct"]', root).setAttribute('aria-pressed', String(s.key === OCTAVE_DOWN));
+  $('[data-act="k-reset"]', root).setAttribute('aria-pressed', String(s.key === 0 && !s.octave));
+  $('[data-act="k-oct-down"]', root).setAttribute('aria-pressed', String(s.octave === -1));
+  $('[data-act="k-oct-up"]', root).setAttribute('aria-pressed', String(s.octave === 1));
   for (const f of RANGE_FIELDS) {
     const td = $(`[data-role="cur-${f.id}"]`, root);
     const v = s[f.id];
@@ -741,9 +774,11 @@ function detailHTML(s, d) {
           </div>
           <div class="d-keybtns">
             <button type="button" class="pill" data-act="k-reset">${icon('reset')}原キー</button>
-            <button type="button" class="pill" data-act="k-oct">${icon('octave')}オク下</button>
+            <button type="button" class="pill" data-act="k-oct-down">${icon('octave')}オク下</button>
+            <button type="button" class="pill" data-act="k-oct-up">${icon('octave', 'flip')}オク上</button>
           </div>
         </div>
+        <p class="d-actual" data-role="actual" hidden></p>
         <div class="d-rec" data-role="rec"></div>
       </section>
       <table class="d-range">
@@ -773,15 +808,16 @@ async function onDetailClick(e) {
   const s = state.byId.get(d.id);
   if (!s) return;
   if (b.dataset.k != null) {
-    setKey(s.id, +b.dataset.k);
+    setTotalKey(s.id, +b.dataset.k);
     return;
   }
   switch (b.dataset.act) {
     case 'close': d.sheet.close(); break;
     case 'k-down': setKey(s.id, s.key - 1); break;
     case 'k-up': setKey(s.id, s.key + 1); break;
-    case 'k-reset': setKey(s.id, 0); break;
-    case 'k-oct': setKey(s.id, OCTAVE_DOWN); break;
+    case 'k-reset': setKey(s.id, 0, 0); break;
+    case 'k-oct-down': toggleOct(s.id, -1); break;
+    case 'k-oct-up': toggleOct(s.id, 1); break;
     case 'fav': state.store.updateSong(s.id, { favorite: !s.favorite }); break;
     case 'sung': markSung(s.id); break;
     case 'voice': openSettings(); break;
@@ -908,11 +944,16 @@ function randomArt(s, cls) {
   return `<span class="${cls}">${icon('music')}${s.artwork ? `<img src="${esc(s.artwork)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
 }
 
+function randomKeyText(s) {
+  const d = describeKey(s.key, s.octave);
+  return d.oct ? `${d.text}（実際 ${d.actual}）` : d.text;
+}
+
 function randomRec(s) {
   if (!hasVoice()) return '';
   const rec = recommendKey(s, voice());
   if (!rec || rec.key === s.key) return '';
-  return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(rec.key)}">${keyText(rec.key)}</b> にする</button>`;
+  return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b> にする</button>`;
 }
 
 function paintRandomResults() {
@@ -936,7 +977,7 @@ function paintRandomResults() {
         ${randomArt(s, 'rnd-art')}
         <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span></span>
       </button>
-      <div class="rnd-info"><span class="rnd-key" data-tone="${keyTone(s.key)}">キー ${keyText(s.key)}</span><span class="rnd-range">${rangeText(s)}</span></div>
+      <div class="rnd-info"><span class="rnd-key" data-tone="${keyTone(describeKey(s.key, s.octave).machine)}">キー ${randomKeyText(s)}</span><span class="rnd-range">${rangeText(s)}</span></div>
       ${randomRec(s)}
       <div class="rnd-actions">
         <button type="button" class="btn" data-open="${esc(s.id)}">詳細を見る</button>
@@ -949,7 +990,7 @@ function paintRandomResults() {
         <span class="rnd-no">${i + 1}</span>
         ${randomArt(s, 'rnd-art sm')}
         <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span><span class="rnd-range">${rangeText(s)}</span></span>
-        <span class="rnd-key" data-tone="${keyTone(s.key)}">${keyText(s.key)}</span>
+        <span class="rnd-key" data-tone="${keyTone(describeKey(s.key, s.octave).machine)}">${describeKey(s.key, s.octave).text}</span>
       </button>
       ${randomRec(s)}
     </li>`).join('')}</ol>`;
@@ -1069,7 +1110,7 @@ async function onRandomClick(e) {
   } else if (b.dataset.sung) {
     markSung(b.dataset.sung);
   } else if (b.dataset.rec) {
-    setKey(b.dataset.rec, +b.dataset.k);
+    setTotalKey(b.dataset.rec, +b.dataset.k);
     paintRandomResults();
   } else {
     switch (b.dataset.act) {
@@ -1132,7 +1173,9 @@ function formHTML(isNew, openMore) {
             <button type="button" class="kb" data-act="k-up" aria-label="キーを1上げる">${icon('plus')}</button>
           </div>
           <button type="button" class="pill" data-act="k-reset">${icon('reset')}原キー</button>
-          <button type="button" class="pill" data-act="k-oct">${icon('octave')}オク下</button>
+          <button type="button" class="pill" data-act="k-oct-down">${icon('octave')}オク下</button>
+          <button type="button" class="pill" data-act="k-oct-up">${icon('octave', 'flip')}オク上</button>
+          <span class="key-actual" data-role="key-actual"></span>
         </div>
       </div>
       <details class="more"${openMore ? ' open' : ''}>
@@ -1258,14 +1301,13 @@ function openForm(song = null) {
   };
 
   const paintKey = () => {
-    const kv = el('[data-role="kv"]');
-    kv.textContent = keyText(draft.key);
-    kv.dataset.tone = keyTone(draft.key);
-    kv.classList.toggle('oct', draft.key === OCTAVE_DOWN);
+    const kd = paintKv(el('[data-role="kv"]'), draft.key, draft.octave);
+    el('[data-role="key-actual"]').textContent = kd.oct ? `実際 ${kd.actual}` : '';
     el('[data-act="k-down"]').disabled = draft.key <= KEY_MIN;
     el('[data-act="k-up"]').disabled = draft.key >= KEY_MAX;
-    el('[data-act="k-reset"]').setAttribute('aria-pressed', String(draft.key === 0));
-    el('[data-act="k-oct"]').setAttribute('aria-pressed', String(draft.key === OCTAVE_DOWN));
+    el('[data-act="k-reset"]').setAttribute('aria-pressed', String(draft.key === 0 && !draft.octave));
+    el('[data-act="k-oct-down"]').setAttribute('aria-pressed', String(draft.octave === -1));
+    el('[data-act="k-oct-up"]').setAttribute('aria-pressed', String(draft.octave === 1));
   };
 
   const paintTags = () => {
@@ -1366,8 +1408,9 @@ function openForm(song = null) {
       case 'cancel': sheet.close(); break;
       case 'k-down': draft.key = clampKey(draft.key - 1); paintKey(); break;
       case 'k-up': draft.key = clampKey(draft.key + 1); paintKey(); break;
-      case 'k-reset': draft.key = 0; paintKey(); break;
-      case 'k-oct': draft.key = OCTAVE_DOWN; paintKey(); break;
+      case 'k-reset': draft.key = 0; draft.octave = 0; paintKey(); break;
+      case 'k-oct-down': Object.assign(draft, toggleOctave(draft.key, draft.octave, -1)); paintKey(); break;
+      case 'k-oct-up': Object.assign(draft, toggleOctave(draft.key, draft.octave, 1)); paintKey(); break;
       case 'tag-add': addTag(); break;
       case 'art-find': {
         const url = await openArtPicker(form.artist.value, form.title.value);

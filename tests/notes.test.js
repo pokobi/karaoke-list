@@ -33,7 +33,7 @@ test('キーの表記と色', () => {
   assert.equal(formatKey(0), '±0');
   assert.equal(formatKey(3), '+3');
   assert.equal(formatKey(-2), '−2');
-  assert.equal(formatKey(-12), 'オク下');
+  assert.equal(formatKey(-12), '−12');
   assert.equal(formatKey(-13), '−13');
   assert.equal(keyTone(1), 'up');
   assert.equal(keyTone(-12), 'down');

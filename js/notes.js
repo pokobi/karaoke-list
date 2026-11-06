@@ -57,8 +57,51 @@ export function clampKey(k) {
 
 export function formatKey(k) {
   if (!k) return '±0';
-  if (k === OCTAVE_DOWN) return 'オク下';
   return k > 0 ? `+${k}` : `−${-k}`;
+}
+
+// ---- オク下・オク上 --------------------------------------------------------
+// 曲の key は「原曲から実際に何半音ずらして歌うか」。octave は、1 オクターブ下（-1）・上（+1）で
+// 歌っているか。カラオケ機で設定するキーは key - 12 × octave になる。
+// 例：オク下で機械のキーを +4 にすると、key = -8、octave = -1。
+
+export const MACHINE_KEY_MAX = 7;
+export const OCTAVE_LABELS = { [-1]: 'オク下', 1: 'オク上' };
+
+export function machineKey(key, octave = 0) {
+  return key - 12 * (octave || 0);
+}
+
+// 実際のキーを、機械のキーとオクターブに分ける。機械で設定できる ±7 に収まるときはオクターブを使わない
+export function splitKey(total) {
+  if (total < -MACHINE_KEY_MAX) return { octave: -1, machine: total + 12 };
+  if (total > MACHINE_KEY_MAX) return { octave: 1, machine: total - 12 };
+  return { octave: 0, machine: total };
+}
+
+// 保存されたオクターブ。記録がない古いデータは、キーの値から推測する（例：−12 は「オク下 ±0」）
+export function octaveOf(raw, key) {
+  return raw === -1 || raw === 0 || raw === 1 ? raw : splitKey(Number.isInteger(key) ? key : 0).octave;
+}
+
+export function describeKey(key, octave = 0) {
+  const machine = machineKey(key, octave);
+  const oct = OCTAVE_LABELS[octave] ?? '';
+  const main = formatKey(machine);
+  return {
+    octave,
+    machine,
+    oct,
+    main,
+    actual: formatKey(key),
+    text: oct ? `${oct} ${main}` : main,
+  };
+}
+
+// オク下・オク上を切り替える。機械のキーはそのままにする
+export function toggleOctave(key, octave, target) {
+  const next = octave === target ? 0 : target;
+  return { key: clampKey(machineKey(key, octave) + 12 * next), octave: next };
 }
 
 export function keyTone(k) {

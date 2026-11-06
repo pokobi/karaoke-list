@@ -2,7 +2,7 @@
 // アプリのファイルは通信を優先し、時間がかかるときやオフラインのときはキャッシュを使う。
 // Firebase SDK はバージョン固定の URL なので、キャッシュを優先する。
 
-const CACHE = 'karaoke-list-v4';
+const CACHE = 'karaoke-list-v5';
 // 一時的に range-note という名前だったときのキャッシュも片付ける
 const OLD_PREFIXES = ['karaoke-list-', 'range-note-'];
 const SCOPE = new URL('./', self.location).pathname;
@@ -30,7 +30,9 @@ const SHELL = [
 const NETWORK_TIMEOUT = 2500;
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE)
+    .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -52,9 +54,16 @@ self.addEventListener('fetch', (e) => {
   }
 });
 
+// ブラウザの HTTP キャッシュに古いファイルが残っていても使わず、毎回サーバーに更新を確かめる
+// （更新直後に新旧のファイルが混ざると、読み込みに失敗して画面が出なくなるため）
+function fetchFresh(req) {
+  if (req.mode === 'navigate') return fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' });
+  return fetch(req, { cache: 'no-cache' });
+}
+
 async function networkFirst(req) {
   const cache = await caches.open(CACHE);
-  const net = fetch(req).then((res) => {
+  const net = fetchFresh(req).then((res) => {
     if (res.ok) cache.put(req, res.clone());
     return res;
   });

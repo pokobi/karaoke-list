@@ -404,7 +404,12 @@ textarea.input { resize: vertical; min-height: 84px; }
 }
 .kv[data-tone="up"] { color: var(--up); background: var(--up-weak); }
 .kv[data-tone="down"] { color: var(--down); background: var(--down-weak); }
-.kv.oct { font-size: 11.5px; letter-spacing: -.04em; }
+.kv.has-oct { align-content: center; gap: 1px; }
+.kv-oct { font-size: 9.5px; font-weight: 750; letter-spacing: -.04em; line-height: 1; }
+.kv-num { line-height: 1.05; }
+.kv[data-oct="down"] .kv-oct { color: var(--down); }
+.kv[data-oct="up"] .kv-oct { color: var(--up); }
+.ic.flip { transform: rotate(180deg); }
 
 .song.skeleton { pointer-events: none; }
 .sk { display: block; border-radius: 7px; background: var(--surface-2); animation: pulse 1.2s ease-in-out infinite; }
@@ -564,13 +569,21 @@ textarea.input { resize: vertical; min-height: 84px; }
 .menu button[aria-checked="true"] { color: var(--accent); font-weight: 700; }
 .menu .ic { width: 18px; height: 18px; }
 
-.pop-key { width: 236px; }
+.pop-key { width: 252px; }
 .keymenu { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .km-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px; }
 .km-title { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
 .km-cur { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.km-cur.tone-zero { color: var(--text-3); }
-.km-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.km-cur .tone-zero { color: var(--text-3); }
+.km-oct { font-size: 14px; }
+.km-oct[data-oct="down"] { color: var(--down); }
+.km-oct[data-oct="up"] { color: var(--up); }
+.km-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.km-curs { display: flex; align-items: baseline; gap: 6px; }
+.km-actual { font-size: 12px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.d-actual { margin-top: 10px; font-size: 13px; color: var(--text-2); }
+.d-actual b { font-variant-numeric: tabular-nums; }
+.key-actual { font-size: 12.5px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .km-btn {
   display: flex;
   align-items: center;
@@ -685,11 +698,11 @@ textarea.input { resize: vertical; min-height: 84px; }
 .stepper .kb { width: 42px; }
 .stepper .kb .ic { width: 18px; height: 18px; }
 .stepper .kv { width: 58px; font-size: 16px; }
-.stepper .kv.oct { font-size: 13px; }
+.stepper .kv-oct { font-size: 10.5px; }
 .stepper.lg { height: 52px; border-radius: 14px; }
 .stepper.lg .kb { width: 52px; }
 .stepper.lg .kv { width: 72px; font-size: 20px; }
-.stepper.lg .kv.oct { font-size: 15px; }
+.stepper.lg .kv-oct { font-size: 11.5px; }
 .pill {
   display: inline-flex;
   align-items: center;

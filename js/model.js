@@ -1,5 +1,5 @@
 // 曲データの正規化と、絞り込み・並び替え。
-import { RANGE_FIELDS, isNote } from './notes.js';
+import { RANGE_FIELDS, isNote, octaveOf } from './notes.js';
 import { normalize, searchTerms, collator } from './text.js';
 
 export const PRESET_TAGS = ['練習中'];
@@ -35,7 +35,7 @@ export const isRangeMissing = (song) => !isNote(song.low) || !isNote(song.chestH
 
 export function emptySong() {
   return {
-    artist: '', title: '', low: null, chestHigh: null, falsettoHigh: null, key: 0,
+    artist: '', title: '', low: null, chestHigh: null, falsettoHigh: null, key: 0, octave: 0,
     favorite: false, tags: [], score: null, memo: '', singCount: 0, lastSungAt: null,
     artwork: null, ext: null, createdAt: 0, updatedAt: 0,
   };
@@ -50,6 +50,7 @@ export function normalizeSong(raw) {
     chestHigh: note(raw.chestHigh),
     falsettoHigh: note(raw.falsettoHigh),
     key: Number.isInteger(raw.key) ? raw.key : 0,
+    octave: octaveOf(raw.octave, raw.key),
     favorite: raw.favorite === true,
     tags: Array.isArray(raw.tags) ? [...new Set(raw.tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim()))] : [],
     score: num(raw.score),
