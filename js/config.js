@@ -9,3 +9,8 @@ export const FIREBASE_CONFIG = {
   messagingSenderId: '450795045667',
   appId: '1:450795045667:web:c6d608e1f7d34b07af0296',
 };
+
+// YouTube Data API v3 のキー（YouTube の再生リストから曲をまとめて追加するときに使う）。
+// アプリの中に置く前提のもので、Google Cloud の設定で「このサイトからだけ」「YouTube Data API だけ」に制限している。
+// null にすると、YouTube からの読み込みは使えない。
+export const YOUTUBE_API_KEY = 'AIzaSyBuNXHii6ly6q_IqqT9S7QErT9hXtiOqbc';

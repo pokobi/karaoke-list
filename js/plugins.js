@@ -18,6 +18,8 @@
 //       hint?: string,   // 設定のボタンの下の説明
 //       run(items, ctx): void,  // items：[{ id, artist, title }]。待たずに戻ってよい（画面の表示も追加機能が持つ）
 //     },
+//     // YouTube Data API のキー（js/config.js の YOUTUBE_API_KEY の代わりに使う）
+//     youtubeApiKey?: string,
 //     // 曲の詳細画面の「試聴」で選べる音源
 //     previewSource?: {
 //       id: string,

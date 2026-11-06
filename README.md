@@ -11,6 +11,7 @@ https://pokobi.github.io/karaoke-list/
 - 曲の登録・編集・削除（アーティスト名、曲名、最低音・地声最高音・裏声最高音、キー）
 - アーティスト名・曲名の入力候補とジャケット画像（登録済みの名前と iTunes の検索結果から）。画像が未設定の曲は、まとめて取得できる
 - テキストからのまとめての追加。メモなどに書いた曲の一覧を貼り付けると、1 行ずつ iTunes で調べ、確認・修正してから追加する。区切りや順番がばらばらな書き方や、よく使われるアーティストの略称も読み取る。確認画面で選び直した略称は覚えて、次から使う
+- 音楽サービスから書き出した曲の一覧（CSV・タブ区切り。Apple Music・Spotify（Exportify）・YouTube Music（Google Takeout の ZIP）・TuneMyMusic など）と、YouTube の再生リストのリンクからのまとめての追加。見出しから曲名・アーティストの列を見分け、分からないときは列を選ぶ。書いてあるとおりに登録するか、iTunes で確かめるかを選べる。確認画面では、ファイル・再生リストや曲名での絞り込みと、表示中の曲のまとめてのチェックができる。追加したあとに、ジャケット画像を裏で探す。サービスごとの書き出し方のガイド付き
 - YouTube Music の再生履歴（Google Takeout）から、よく聴いている曲を選んで追加
 - お気に入り、タグ（色の設定・並べ替えを含む）、採点、メモ、歌った回数・最終歌唱日
 - 一覧で複数の曲を選んでのまとめての操作（タグ・お気に入り・削除）と、行のスワイプ操作（歌った回数の記録・お気に入りの切り替え）
@@ -52,6 +53,7 @@ https://pokobi.github.io/karaoke-list/
 - Cloud Firestore（ログインしたときの保存先。端末内キャッシュあり）
 - localStorage（ログインしていないときの保存先）、IndexedDB（試聴の音楽ファイルの保存先）
 - iTunes Search API（入力候補・ジャケット画像・試聴）
+- YouTube Data API v3（再生リストからのまとめての追加。キーは `js/config.js` の `YOUTUBE_API_KEY`）
 - Web Audio API（AudioWorklet）による音の高さの変換（試聴のキー変更）
 - [fflate](https://github.com/101arrowz/fflate)（Takeout の ZIP の展開。ライセンスは `js/vendor/fflate.LICENSE`）
 
