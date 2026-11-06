@@ -398,7 +398,7 @@ function createItem(id) {
       <span class="song-sub"><span class="a"></span><span class="cnt" hidden><span class="vh">歌った回数</span>${icon('mic')}<span class="cn"></span><span class="vh">回</span></span><span class="tags"></span></span>
     </button>
     <div class="range" role="group" aria-label="音域">
-      ${RANGE_FIELDS.map((f) => `<div class="rc"><span class="rl">${f.short}</span><span class="rv"></span></div>`).join('')}
+      ${RANGE_FIELDS.map((f) => `<div class="rc"><span class="rl">${f.short}</span><span class="rv"></span><span class="vh rw"></span></div>`).join('')}
     </div>
     <div class="keyctl" role="group" aria-label="キー">
       <button type="button" class="kb k-down" aria-label="キーを1下げる">${icon('minus')}</button>
@@ -420,7 +420,9 @@ function createItem(id) {
     cnt: $('.cnt', el),
     cn: $('.cn', el),
     fav: $('.fav', el),
+    rc: $$('.rc', el),
     rv: $$('.rv', el),
+    rw: $$('.rw', el),
     kv: $('.kv', el),
     swR: $('.sw-r-t', el),
     kd: $('.k-down', el),
@@ -430,7 +432,8 @@ function createItem(id) {
 }
 
 function updateItem(it, s) {
-  const sig = [s.title, s.artist, s.favorite, s.singCount, s.tags.map((t) => `${t}:${state.profile.tagColors.get(t) ?? ''}`).join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork].join('\u0001');
+  const vo = voice();
+  const sig = [s.title, s.artist, s.favorite, s.singCount, s.tags.map((t) => `${t}:${state.profile.tagColors.get(t) ?? ''}`).join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork, vo.low, vo.chestHigh, vo.falsettoHigh].join('\u0001');
   if (sig === it.sig) return;
   it.sig = sig;
   if (s.artwork) {
@@ -451,6 +454,8 @@ function updateItem(it, s) {
   it.swR.textContent = s.favorite ? '解除' : 'お気に入り';
   const shown = s.tags.slice(0, 2);
   it.tags.innerHTML = shown.map((t) => `<span class="tag"${tagC(t)}>${esc(t)}</span>`).join('') + (s.tags.length > 2 ? `<span class="tag more">+${s.tags.length - 2}</span>` : '');
+  // 今のキーで自分の音域を超える音は、行に色を付ける（詳細画面の注意の印と同じ色）
+  const issues = hasVoice() ? rangeIssues(s, vo, s.key) : [];
   RANGE_FIELDS.forEach((f, i) => {
     const v = s[f.id];
     const el = it.rv[i];
@@ -459,6 +464,14 @@ function updateItem(it, s) {
     el.classList.toggle('none', !isNote(v));
     el.classList.toggle('long', text.length >= 7);
     el.classList.toggle('xlong', text.length >= 9);
+    const issue = issues.find((x) => x.field === f.id);
+    const rc = it.rc[i];
+    const note = issue ? `自分の音域より${issue.by}半音${ISSUE_LABEL[f.id][1]}` : '';
+    rc.classList.toggle('warn', !!issue);
+    if (issue) rc.style.setProperty('--warn', warnColor(issue.by));
+    else rc.style.removeProperty('--warn');
+    rc.title = note;
+    it.rw[i].textContent = note ? `（${note}）` : '';
   });
   const kd = paintKv(it.kv, s.key, s.octave);
   it.kv.setAttribute('aria-label', `キー ${kd.text}${kd.oct ? `（実際 ${kd.actual}）` : ''}。原キー・オク下・オク上のメニューを開く`);
