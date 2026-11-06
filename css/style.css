@@ -1130,6 +1130,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .pv-link { color: var(--accent); font-weight: 650; font-size: 12.5px; text-decoration: none; white-space: nowrap; }
 .d-pv > .pill + .hint { margin-top: 8px; }
 .pv-files { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; }
+.pv-files:not([hidden]) + .btn.wide { margin-top: 12px; }
 
 /* ランダム選曲の演出 */
 .fx-pending { position: relative; }

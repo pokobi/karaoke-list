@@ -5,7 +5,7 @@ import { esc, icon, toast, confirmDialog } from './ui.js';
 import { describeKey, machineKey, formatKey } from './notes.js';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
-const FILE_ACCEPT = 'audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.oga,.opus';
+export const FILE_ACCEPT = 'audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.oga,.opus';
 
 export function previewSupported() {
   return typeof window !== 'undefined'
@@ -45,6 +45,7 @@ async function run(mode, fn) {
 // 曲の ID ごとに { blob, name, type, size, addedAt } を保存する
 export const audioFiles = {
   get: (id) => run('readonly', (st) => st.get(id)),
+  keys: () => run('readonly', (st) => st.getAllKeys()),
   put: (id, rec) => run('readwrite', (st) => st.put(rec, id)),
   remove: (id) => run('readwrite', (st) => st.delete(id)),
   clear: () => run('readwrite', (st) => st.clear()),
