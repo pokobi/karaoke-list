@@ -733,10 +733,11 @@ textarea.input { resize: vertical; min-height: 84px; }
 .rec-ok .ic { width: 17px; height: 17px; color: var(--ok); }
 .rec-ok b { font-variant-numeric: tabular-nums; }
 .rec-note { font-size: 12.5px; color: var(--text-3); line-height: 1.55; padding: 0 2px; }
-.rec-note.warn { display: flex; align-items: flex-start; gap: 5px; color: var(--danger); margin-top: 6px; }
-.rec-note.warn .ic { flex: none; width: 15px; height: 15px; margin-top: 2px; }
-.range-warn { display: inline-flex; vertical-align: -2px; margin-left: 5px; color: var(--danger); }
-.range-warn .ic { width: 15px; height: 15px; }
+.rec-note.warn { display: flex; align-items: flex-start; gap: 6px; color: var(--text-2); margin-top: 6px; }
+.rec-note.warn .ic { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--warn, var(--danger)); }
+/* 注意の印。色ははみ出しの大きさで変わる（薄い黄色 → 赤） */
+.range-warn { display: inline-grid; place-items: center; vertical-align: -3px; margin-left: 6px; width: 20px; height: 20px; border-radius: 6px; color: var(--warn, var(--danger)); background: color-mix(in srgb, var(--warn, var(--danger)) 18%, transparent); }
+.range-warn .ic { width: 14px; height: 14px; }
 .rec-link { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 12.5px; color: var(--text-2); text-align: left; line-height: 1.5; }
 .rec-link .ic { width: 17px; height: 17px; color: var(--accent); }
 

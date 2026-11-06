@@ -7,7 +7,7 @@ import { collator, normalize } from './text.js';
 import {
   SORTS, emptySong, normalizeSong, toPayload, dupKey, sanitizeView, defaultView, applyView, hasRangeFilter,
   artistCounts, allTags, suggestArtists, tagCounts, ACCENTS, NOTE_STYLES, REC_OFFSETS, sanitizePrefs, planLocalMove,
-  TAG_COLORS, tagColorMap, tagColorList,
+  TAG_COLORS, tagColorMap, tagColorList, newSongId, isRangeMissing,
 } from './model.js';
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
@@ -120,6 +120,11 @@ const recommend = (s) => recommendKey(s, voice(), { offset: recOffset() });
 // 自分の音域を超える音の説明（例：「裏声最高音が1半音高い」）
 const ISSUE_LABEL = { low: ['最低音', '低い'], chestHigh: ['地声最高音', '高い'], falsettoHigh: ['裏声最高音', '高い'] };
 const issueText = (x) => `${ISSUE_LABEL[x.field][0]}が${x.by}半音${ISSUE_LABEL[x.field][1]}`;
+// 注意の印の色。はみ出しが 1 半音なら薄い黄色、離れるほど赤に近づける（6 半音以上で赤）
+function warnColor(by) {
+  const t = Math.min(1, Math.max(0, (by - 1) / 5));
+  return `hsl(${Math.round(50 * (1 - t))} ${Math.round(92 - 12 * t)}% ${Math.round(62 - 12 * t)}%)`;
+}
 const tagList = () => allTags(state.songs, state.profile.tags);
 const pad2 = (n) => String(n).padStart(2, '0');
 const fmtDate = (ms) => {
@@ -791,7 +796,7 @@ function recommendHTML(s, { compact = false } = {}) {
   }
   const rec = recommend(s);
   if (!rec) return '<p class="rec-note">音域が未入力のため、おすすめキーを計算できません</p>';
-  const note = rec.fits ? '' : `<p class="rec-note warn">${icon('alert')}<span>おすすめキーでも、${rec.issues.map(issueText).join('、')}です</span></p>`;
+  const note = rec.fits ? '' : `<p class="rec-note warn" style="--warn:${warnColor(Math.max(...rec.issues.map((x) => x.by)))}">${icon('alert')}<span>おすすめキーでも、${rec.issues.map(issueText).join('、')}です</span></p>`;
   if (rec.key === s.key) {
     return `<div class="rec-ok">${icon('check')}<span>おすすめキー（<b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b>）です</span></div>${note}`;
   }
@@ -902,7 +907,7 @@ function paintDetail() {
     const v = s[f.id];
     const issue = issues.find((x) => x.field === f.id);
     td.innerHTML = (isNote(v) ? fmtNoteHTML(v + s.key) : '—')
-      + (issue ? `<span class="range-warn" title="自分の音域より${issue.by}半音${ISSUE_LABEL[f.id][1]}" aria-label="自分の音域より${issue.by}半音${ISSUE_LABEL[f.id][1]}">${icon('alert')}</span>` : '');
+      + (issue ? `<span class="range-warn" style="--warn:${warnColor(issue.by)}" title="自分の音域より${issue.by}半音${ISSUE_LABEL[f.id][1]}" aria-label="自分の音域より${issue.by}半音${ISSUE_LABEL[f.id][1]}">${icon('alert')}</span>` : '');
     td.dataset.tone = isNote(v) ? keyTone(s.key) : 'zero';
     td.classList.toggle('over', !!issue);
   }
@@ -1529,6 +1534,36 @@ function openRangeSearch(artist, title) {
   }
   const q = [String(artist ?? '').trim(), t, '音域'].filter(Boolean).join(' ');
   window.open(WEB_SEARCH_URL + encodeURIComponent(q), '_blank', 'noopener');
+}
+
+// 追加機能が、まとめて追加した曲などの音域を補う（rangeBatch）。items：[{ id, artist, title }]
+const rangeBatches = () => plugins.flatMap((p) => (p.rangeBatch ? [p.rangeBatch] : []));
+const rangeBatchCtx = {
+  getSong: (id) => state.byId.get(id) ?? null,
+  // 音域を入れて保存する。すでに値がある項目は変えない。曲が消えていれば false
+  applyRange(id, range, extPatch) {
+    const s = state.byId.get(id);
+    if (!s) return false;
+    const patch = {};
+    for (const f of RANGE_FIELDS) if (isNote(range?.[f.id]) && !isNote(s[f.id])) patch[f.id] = range[f.id];
+    if (!Object.keys(patch).length) return false;
+    if (extPatch) patch.ext = { ...(s.ext ?? {}), ...extPatch };
+    state.store.updateSong(id, patch);
+    return true;
+  },
+  openSong: (id) => {
+    if (state.byId.has(id)) openDetail(id);
+  },
+};
+function runRangeBatch(items) {
+  if (!items.length) return;
+  for (const b of rangeBatches()) {
+    try {
+      b.run(items, rangeBatchCtx);
+    } catch (err) {
+      console.error(err);
+    }
+  }
 }
 
 async function runRangeAction(index, ctx) {
@@ -2194,6 +2229,17 @@ async function runArtJob() {
   toast(`${artJob.done}曲を調べて、${artJob.found}曲に画像を設定しました`, { duration: 5000 });
 }
 
+function rangeBatchSettingsHTML() {
+  const b = rangeBatches()[0];
+  if (!b) return '';
+  const n = state.songs.filter(isRangeMissing).length;
+  return `<section class="set-sec">
+        <h4>音域の取り込み</h4>
+        <button type="button" class="btn wide" data-act="range-batch"${n ? '' : ' disabled'}>${icon('search')}${esc(b.label)}（${n}曲）</button>
+        ${b.hint ? `<p class="hint">${esc(b.hint)}</p>` : ''}
+      </section>`;
+}
+
 function artJobHTML() {
   if (artJob.running) {
     const pct = artJob.total ? Math.round((artJob.done / artJob.total) * 100) : 0;
@@ -2659,10 +2705,11 @@ function openTextImport() {
     job.gen++;
     const now = Date.now();
     const entries = picks.map((r, i) => ({
-      id: null,
+      id: newSongId(),
       data: toPayload(normalizeSong({ ...emptySong(), artist: r.artist, title: r.title, artwork: r.artwork, createdAt: now - i, updatedAt: now })),
     }));
     state.store.putSongs(entries);
+    runRangeBatch(entries.map((e) => ({ id: e.id, artist: e.data.artist, title: e.data.title })));
     const artists = [...new Set(picks.map((r) => r.artist).filter(Boolean))].filter((n) => !state.profile.artists.includes(n));
     if (artists.length) state.store.addArtists(artists);
     // 行に書いた略称と、選んだアーティスト名を覚えて、次から使う
@@ -2811,6 +2858,7 @@ function paintSettings() {
           <span class="row-r">${state.profile.artists.length}件${icon('chevron-right')}</span>
         </button>
       </section>
+      ${rangeBatchSettingsHTML()}
       <section class="set-sec">
         <h4>ジャケット画像</h4>
         <div data-role="art-job">${artJobHTML()}</div>
@@ -2908,6 +2956,17 @@ async function onSettingsClick(e) {
     case 'export': exportCSV(); break;
     case 'import': $('#csv-file').click(); break;
     case 'art-run': runArtJob(); break;
+    case 'range-batch': {
+      const targets = state.songs.filter(isRangeMissing);
+      if (!targets.length) break;
+      const ok = await confirmDialog({
+        title: `${targets.length}曲の音域を取り込みますか？`,
+        message: '1曲ずつ順に調べるので、曲数が多いと時間がかかります。調べている間も、ほかの操作はできます。',
+        ok: '取り込む',
+      });
+      if (ok) runRangeBatch(targets.map((s) => ({ id: s.id, artist: s.artist, title: s.title })));
+      break;
+    }
     case 'art-cancel': artJob.cancel = true; break;
     case 'history': $('#history-file').click(); break;
     case 'text-import': openTextImport(); break;

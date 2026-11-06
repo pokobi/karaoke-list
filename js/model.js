@@ -287,13 +287,14 @@ export function suggestArtists(names, songs, input, limit = 8) {
 
 // ---- ログインする前にこの端末に保存したデータを、アカウントへ移す ----
 
-const randomId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 20) : Math.random().toString(36).slice(2) + Date.now().toString(36));
+// 新しい曲の ID（保存先に任せず、先に決めておきたいときに使う）
+export const newSongId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 20) : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
 // 移す中身を決める。アカウントにある曲には手を加えず、同じアーティスト・曲名の曲は追加しない。
 // 曲の ID はそのまま使う（試聴の音楽ファイルが曲の ID で結び付いているため）。アカウントの曲と ID が重なるときだけ新しくする。
 // 音域・タグ（色を含む）・アーティスト名の候補・表示の設定・覚えた略称は、アカウントにないものだけを足す。
 // 戻り値：add（[{ id, from, data }]）、skipped（追加しない曲 [{ from, to }]）、profile（updateProfile に渡す値）、artists（addArtists に渡す値）
-export function planLocalMove(local, account, newId = randomId) {
+export function planLocalMove(local, account, newId = newSongId) {
   const accSongs = (account?.songs ?? []).map(normalizeSong);
   const byKey = new Map(accSongs.map((s) => [dupKey(s), s]));
   const ids = new Set(accSongs.map((s) => s.id));
