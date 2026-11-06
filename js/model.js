@@ -256,14 +256,16 @@ export const NOTE_STYLES = [
   { id: 'both', label: '両方' },
   { id: 'scientific', label: 'G4 形式' },
 ];
-export const REC_MARGINS = [0, 1, 2, 3];
+// おすすめキーで、曲の地声最高音を自分の地声最高音より何半音低くするか
+export const REC_OFFSETS = [0, 1, 2, 3, 4];
+export const DEFAULT_REC_OFFSET = 2;
 
 export function sanitizePrefs(p) {
   const o = p && typeof p === 'object' ? p : {};
   return {
     accent: ACCENTS.some((a) => a.id === o.accent) ? o.accent : 'indigo',
     noteStyle: NOTE_STYLES.some((s) => s.id === o.noteStyle) ? o.noteStyle : 'karaoke',
-    recMargin: REC_MARGINS.includes(o.recMargin) ? o.recMargin : 0,
+    recOffset: REC_OFFSETS.includes(o.recOffset) ? o.recOffset : DEFAULT_REC_OFFSET,
   };
 }
 

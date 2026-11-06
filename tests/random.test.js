@@ -31,11 +31,13 @@ test('最近歌った曲を除く', () => {
 test('自分の音域で歌える曲だけ（今のキー／おすすめキー）', () => {
   // b は hiB を -2 して hiA。地声最高音 mid2G を超えるので今のキーでは歌えない
   assert.equal(fitsVoice(songs[1], voice, 'current'), false);
-  // おすすめキーにすれば歌える（最低音 mid1C から lowG までは下げられる）
-  assert.equal(fitsVoice(songs[1], voice, 'recommend'), true);
+  // おすすめキー（地声最高音を mid2F に合わせる -6）では最低音が1半音足りない。余裕を 0 にすれば歌える
+  assert.equal(fitsVoice(songs[1], voice, 'recommend'), false);
+  assert.equal(fitsVoice(songs[1], voice, 'recommend', 0), true);
   assert.equal(ids(randomPool(songs, opts({ fitsVoice: true, fitsMode: 'current' }), { voice })), 'a');
   // c は最低音 mid1F〜裏声 hiF。おすすめキーにすると収まる
-  assert.equal(ids(randomPool(songs, opts({ fitsVoice: true, fitsMode: 'recommend' }), { voice })), 'abc');
+  assert.equal(ids(randomPool(songs, opts({ fitsVoice: true, fitsMode: 'recommend' }), { voice })), 'ac');
+  assert.equal(ids(randomPool(songs, opts({ fitsVoice: true, fitsMode: 'recommend' }), { voice, offset: 0 })), 'abc');
   // 音域が未入力の曲（d）は判断できないので含めない。自分の音域がなければ何も選ばない
   assert.equal(ids(randomPool(songs, opts({ fitsVoice: true }), { voice: {} })), '');
 });

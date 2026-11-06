@@ -1,5 +1,5 @@
 // ランダム選曲の条件と抽選。
-import { RANGE_FIELDS, isNote, recommendKey } from './notes.js';
+import { RANGE_FIELDS, isNote, recommendKey, rangeIssues } from './notes.js';
 
 export const COUNTS = [1, 3, 5, 10];
 export const EXCLUDE_DAYS = [0, 3, 7, 14, 30];
@@ -44,20 +44,13 @@ export function hasVoiceRange(voice) {
   return RANGE_FIELDS.some((f) => isNote(voice?.[f.id]));
 }
 
-// 自分の音域に収まるか。音域が入力されていない曲は判断できないので、収まらない扱いにする
-// margin を指定すると、自分の最高音を margin 半音だけ低く見積もる（おすすめキーの余裕と同じ）
-export function fitsVoice(song, voice, mode, margin = 0) {
+// 自分の音域で歌えるか（今のキー、またはおすすめキーで、自分の音域を超える音がないか）。
+// 音域が入力されていない曲は判断できないので、歌えない扱いにする
+export function fitsVoice(song, voice, mode, offset = 2) {
   if (!hasVoiceRange(voice)) return false;
   if (!isNote(song.low) && !isNote(song.chestHigh) && !isNote(song.falsettoHigh)) return false;
-  if (mode === 'recommend') return recommendKey(song, voice, { margin })?.fits === true;
-  const k = song.key ?? 0;
-  if (isNote(song.low) && isNote(voice.low) && song.low + k < voice.low) return false;
-  if (isNote(song.chestHigh) && isNote(voice.chestHigh) && song.chestHigh + k > voice.chestHigh - margin) return false;
-  if (isNote(song.falsettoHigh)) {
-    const top = isNote(voice.falsettoHigh) ? voice.falsettoHigh : voice.chestHigh;
-    if (isNote(top) && song.falsettoHigh + k > top - margin) return false;
-  }
-  return true;
+  if (mode === 'recommend') return recommendKey(song, voice, { offset })?.fits === true;
+  return rangeIssues(song, voice, song.key ?? 0).length === 0;
 }
 
 // 音域の高さの条件（キー適用後の音で比べる）
@@ -84,13 +77,13 @@ export function hasRandomRange(o) {
 }
 
 // 条件に合う曲
-export function randomPool(songs, o, { voice, now = Date.now(), margin = 0 } = {}) {
+export function randomPool(songs, o, { voice, now = Date.now(), offset = 2 } = {}) {
   return songs.filter((s) => {
     if (o.favoriteOnly && !s.favorite) return false;
     if (o.artists.length && !o.artists.includes(s.artist)) return false;
     if (o.tags.length && !o.tags.some((t) => s.tags.includes(t))) return false;
     if (o.excludeDays && s.lastSungAt && now - s.lastSungAt < o.excludeDays * DAY) return false;
-    if (o.fitsVoice && !fitsVoice(s, voice, o.fitsMode, margin)) return false;
+    if (o.fitsVoice && !fitsVoice(s, voice, o.fitsMode, offset)) return false;
     if (!inRange(s, o.range)) return false;
     return true;
   });

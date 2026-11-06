@@ -119,23 +119,43 @@ export function keyTone(k) {
   return 'zero';
 }
 
-// 自分の音域に収まるキーのうち、原曲キーに最も近いものを返す。
-// 収まるキーがない場合は、はみ出しが最小になるキー（その中で原曲に近いもの）を返す。
-// 計算に使える音が揃っていなければ null。
-// margin を指定すると、自分の最高音（地声・裏声）を margin 半音だけ低く見積もって、余裕を残す。
-export function recommendKey(song, voice, { margin = 0 } = {}) {
-  if (!song || !voice) return null;
-  let kmin = -Infinity;
-  let kmax = Infinity;
-  if (isNote(song.low) && isNote(voice.low)) kmin = voice.low - song.low;
-  if (isNote(song.chestHigh) && isNote(voice.chestHigh)) kmax = Math.min(kmax, voice.chestHigh - margin - song.chestHigh);
+// 曲を key 半音動かしたとき、自分の音域を超える音。[{ field, by }]（by：超える半音数）
+// 自分の裏声最高音がなければ、曲の裏声最高音は自分の地声最高音と比べる
+export function rangeIssues(song, voice, key = 0) {
+  const out = [];
+  if (!song || !voice) return out;
+  if (isNote(song.low) && isNote(voice.low) && song.low + key < voice.low) out.push({ field: 'low', by: voice.low - (song.low + key) });
+  if (isNote(song.chestHigh) && isNote(voice.chestHigh) && song.chestHigh + key > voice.chestHigh) {
+    out.push({ field: 'chestHigh', by: song.chestHigh + key - voice.chestHigh });
+  }
   if (isNote(song.falsettoHigh)) {
     const top = isNote(voice.falsettoHigh) ? voice.falsettoHigh : voice.chestHigh;
-    if (isNote(top)) kmax = Math.min(kmax, top - margin - song.falsettoHigh);
+    if (isNote(top) && song.falsettoHigh + key > top) out.push({ field: 'falsettoHigh', by: song.falsettoHigh + key - top });
   }
-  if (kmin === -Infinity && kmax === Infinity) return null;
-  if (kmin <= kmax) {
-    return { key: clampKey(Math.min(Math.max(0, kmin), kmax)), fits: true, short: 0 };
+  return out;
+}
+
+// おすすめキー：曲の地声最高音が「自分の地声最高音 − offset 半音」になるキー。
+// 地声最高音が分からないときは裏声最高音どうし（自分の裏声最高音がなければ地声最高音）で同じように合わせ、
+// それも分からないときは、最低音が出るキーのうち原曲に近いもの。計算に使える音がなければ null。
+// 戻り値：{ key, basis（合わせた音）, issues（そのキーで自分の音域を超える音）, fits（超える音がない） }
+export function recommendKey(song, voice, { offset = 2 } = {}) {
+  if (!song || !voice) return null;
+  let key = null;
+  let basis = null;
+  const fTop = isNote(voice.falsettoHigh) ? voice.falsettoHigh : voice.chestHigh;
+  if (isNote(song.chestHigh) && isNote(voice.chestHigh)) {
+    key = voice.chestHigh - offset - song.chestHigh;
+    basis = 'chestHigh';
+  } else if (isNote(song.falsettoHigh) && isNote(fTop)) {
+    key = fTop - offset - song.falsettoHigh;
+    basis = 'falsettoHigh';
+  } else if (isNote(song.low) && isNote(voice.low)) {
+    key = Math.max(0, voice.low - song.low);
+    basis = 'low';
   }
-  return { key: clampKey(Math.min(Math.max(0, kmax), kmin)), fits: false, short: kmin - kmax };
+  if (key === null) return null;
+  key = clampKey(key);
+  const issues = rangeIssues(song, voice, key);
+  return { key, basis, issues, fits: issues.length === 0 };
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { noteName, parseNote, formatKey, keyTone, clampKey, recommendKey, NOTE_MAX } from '../js/notes.js';
+import { noteName, parseNote, formatKey, keyTone, clampKey, recommendKey, rangeIssues, NOTE_MAX } from '../js/notes.js';
 
 test('音階の表記と番号を相互に変換できる', () => {
   assert.equal(noteName(0), 'lowA');
@@ -42,26 +42,39 @@ test('キーの表記と色', () => {
   assert.equal(clampKey(-99), -24);
 });
 
-test('おすすめキーは音域に収まる範囲で原曲キーに最も近いもの', () => {
+test('おすすめキーは、曲の地声最高音を自分の地声最高音の2半音下に合わせる', () => {
   const n = parseNote;
   const voice = { low: n('lowG'), chestHigh: n('mid2G'), falsettoHigh: n('hiC') };
-  // そのまま収まる
-  assert.deepEqual(recommendKey({ low: n('mid1C'), chestHigh: n('mid2E'), falsettoHigh: null }, voice), { key: 0, fits: true, short: 0 });
-  // 地声最高音が2つ高い（hiA は mid2G の半音2つ上）→ -2
-  assert.equal(recommendKey({ low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: null }, voice).key, -2);
-  // 裏声が高い → 裏声で決まる
-  assert.equal(recommendKey({ low: n('mid1C'), chestHigh: n('mid2E'), falsettoHigh: n('hiE') }, voice).key, -4);
-  // 低すぎる → 上げる
-  assert.equal(recommendKey({ low: n('lowE'), chestHigh: n('mid1A'), falsettoHigh: null }, voice).key, 3);
-  // 音域が広すぎて収まらない
-  const r = recommendKey({ low: n('lowE'), chestHigh: n('hiA'), falsettoHigh: null }, voice);
-  assert.equal(r.fits, false);
-  assert.equal(r.short, 3 + 2);
+  // 地声最高音 mid2E を mid2F（mid2G の2半音下）へ → +1
+  assert.deepEqual(recommendKey({ low: n('mid1C'), chestHigh: n('mid2E'), falsettoHigh: null }, voice), { key: 1, basis: 'chestHigh', issues: [], fits: true });
+  // hiA は mid2G の2半音上 → -4。余裕を 0 にすると -2
+  assert.equal(recommendKey({ low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: null }, voice).key, -4);
+  assert.equal(recommendKey({ low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: null }, voice, { offset: 0 }).key, -2);
+  // 低い曲は上げる（mid2C を mid2F へ）
+  assert.equal(recommendKey({ low: n('lowE'), chestHigh: n('mid2C'), falsettoHigh: null }, voice).key, 5);
+  // そのキーで裏声最高音や最低音が自分の音域を超えるときは、その音と半音数を返す
+  const f = recommendKey({ low: n('mid1C'), chestHigh: n('mid2E'), falsettoHigh: n('hiE') }, voice);
+  assert.equal(f.key, 1);
+  assert.equal(f.fits, false);
+  assert.deepEqual(f.issues, [{ field: 'falsettoHigh', by: 5 }]);
+  assert.deepEqual(recommendKey({ low: n('lowE'), chestHigh: n('hiA'), falsettoHigh: null }, voice).issues, [{ field: 'low', by: 7 }]);
   // 音域が未入力
   assert.equal(recommendKey({ low: null, chestHigh: null, falsettoHigh: null }, voice), null);
-  // 自分の裏声が未登録なら、曲の裏声は地声最高音と比べる
-  assert.equal(recommendKey({ low: null, chestHigh: null, falsettoHigh: n('hiA') }, { chestHigh: n('mid2G') }).key, -2);
-  // 女性曲を男性の音域で：オク下付近まで下げる
+  // 地声最高音がなければ裏声最高音で合わせる（自分の裏声が未登録なら地声最高音と比べる）
+  assert.equal(recommendKey({ low: null, chestHigh: null, falsettoHigh: n('hiA') }, { chestHigh: n('mid2G') }).key, -4);
+  // 最低音しか分からなければ、最低音が出る範囲で原曲に近いキー
+  assert.equal(recommendKey({ low: n('lowE'), chestHigh: null, falsettoHigh: null }, { low: n('lowG') }).key, 3);
+  assert.equal(recommendKey({ low: n('mid1C'), chestHigh: null, falsettoHigh: null }, { low: n('lowG') }).key, 0);
+  // 女性曲を男性の音域で
   const male = { low: n('lowF'), chestHigh: n('mid2F'), falsettoHigh: n('hiA') };
-  assert.equal(recommendKey({ low: n('mid1F'), chestHigh: n('hiD'), falsettoHigh: n('hiF') }, male).key, -9);
+  assert.equal(recommendKey({ low: n('mid1F'), chestHigh: n('hiD'), falsettoHigh: n('hiF') }, male).key, -11);
+});
+
+test('今のキーで自分の音域を超える音', () => {
+  const n = parseNote;
+  const voice = { low: n('lowG'), chestHigh: n('mid2G') };
+  const song = { low: n('lowE'), chestHigh: n('hiA'), falsettoHigh: n('hiC') };
+  assert.deepEqual(rangeIssues(song, voice, 0), [{ field: 'low', by: 3 }, { field: 'chestHigh', by: 2 }, { field: 'falsettoHigh', by: 5 }]);
+  assert.deepEqual(rangeIssues(song, voice, 3), [{ field: 'chestHigh', by: 5 }, { field: 'falsettoHigh', by: 8 }]);
+  assert.deepEqual(rangeIssues(song, {}, 0), []);
 });

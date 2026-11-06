@@ -1,12 +1,12 @@
 import { FIREBASE_CONFIG } from './config.js';
 import {
-  RANGE_FIELDS, KEY_MIN, KEY_MAX, isNote, noteName, formatKey, keyTone, clampKey, recommendKey,
+  RANGE_FIELDS, KEY_MIN, KEY_MAX, isNote, noteName, formatKey, keyTone, clampKey, recommendKey, rangeIssues,
   splitKey, describeKey, toggleOctave,
 } from './notes.js';
 import { collator, normalize } from './text.js';
 import {
   SORTS, emptySong, normalizeSong, toPayload, dupKey, sanitizeView, defaultView, applyView, hasRangeFilter,
-  artistCounts, allTags, suggestArtists, tagCounts, ACCENTS, NOTE_STYLES, REC_MARGINS, sanitizePrefs, planLocalMove,
+  artistCounts, allTags, suggestArtists, tagCounts, ACCENTS, NOTE_STYLES, REC_OFFSETS, sanitizePrefs, planLocalMove,
   TAG_COLORS, tagColorMap, tagColorList,
 } from './model.js';
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
@@ -114,8 +114,12 @@ function saveView() {
 
 const voice = () => state.profile.range ?? {};
 const hasVoice = () => RANGE_FIELDS.some((f) => isNote(voice()[f.id]));
-const recMargin = () => state.profile.prefs?.recMargin ?? 0;
-const recommend = (s) => recommendKey(s, voice(), { margin: recMargin() });
+const recOffset = () => state.profile.prefs?.recOffset ?? 2;
+const recommend = (s) => recommendKey(s, voice(), { offset: recOffset() });
+
+// 自分の音域を超える音の説明（例：「裏声最高音が1半音高い」）
+const ISSUE_LABEL = { low: ['最低音', '低い'], chestHigh: ['地声最高音', '高い'], falsettoHigh: ['裏声最高音', '高い'] };
+const issueText = (x) => `${ISSUE_LABEL[x.field][0]}が${x.by}半音${ISSUE_LABEL[x.field][1]}`;
 const tagList = () => allTags(state.songs, state.profile.tags);
 const pad2 = (n) => String(n).padStart(2, '0');
 const fmtDate = (ms) => {
@@ -787,7 +791,7 @@ function recommendHTML(s, { compact = false } = {}) {
   }
   const rec = recommend(s);
   if (!rec) return '<p class="rec-note">音域が未入力のため、おすすめキーを計算できません</p>';
-  const note = rec.fits ? '' : `<p class="rec-note warn">音域に収まりません（${rec.short}半音分）。一番近いキーです</p>`;
+  const note = rec.fits ? '' : `<p class="rec-note warn">${icon('alert')}<span>おすすめキーでも、${rec.issues.map(issueText).join('、')}です</span></p>`;
   if (rec.key === s.key) {
     return `<div class="rec-ok">${icon('check')}<span>おすすめキー（<b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b>）です</span></div>${note}`;
   }
@@ -877,7 +881,7 @@ function paintDetail() {
     return;
   }
   const root = $('.detail', d.sheet.el);
-  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, voice(), state.profile.tags, getNoteStyle(), recMargin()]);
+  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, voice(), state.profile.tags, getNoteStyle(), recOffset()]);
   if (sig !== d.sig) {
     d.sig = sig;
     root.innerHTML = detailHTML(s, d);
@@ -891,11 +895,16 @@ function paintDetail() {
   $('[data-act="k-reset"]', root).setAttribute('aria-pressed', String(s.key === 0 && !s.octave));
   $('[data-act="k-oct-down"]', root).setAttribute('aria-pressed', String(s.octave === -1));
   $('[data-act="k-oct-up"]', root).setAttribute('aria-pressed', String(s.octave === 1));
+  // 今のキーで自分の音域を超える音には、注意の印を付ける
+  const issues = hasVoice() ? rangeIssues(s, voice(), s.key) : [];
   for (const f of RANGE_FIELDS) {
     const td = $(`[data-role="cur-${f.id}"]`, root);
     const v = s[f.id];
-    td.innerHTML = isNote(v) ? fmtNoteHTML(v + s.key) : '—';
+    const issue = issues.find((x) => x.field === f.id);
+    td.innerHTML = (isNote(v) ? fmtNoteHTML(v + s.key) : '—')
+      + (issue ? `<span class="range-warn" title="自分の音域より${issue.by}半音${ISSUE_LABEL[f.id][1]}" aria-label="自分の音域より${issue.by}半音${ISSUE_LABEL[f.id][1]}">${icon('alert')}</span>` : '');
     td.dataset.tone = isNote(v) ? keyTone(s.key) : 'zero';
+    td.classList.toggle('over', !!issue);
   }
   $('[data-role="rec"]', root).innerHTML = recommendHTML(s);
   d.preview?.paint($('[data-role="preview"]', root));
@@ -1086,7 +1095,7 @@ function saveRandomOptions() {
   } catch { /* 保存できなくても動作は続ける */ }
 }
 
-const randomPoolNow = () => randomPool(state.songs, state.random.opts, { voice: voice(), margin: recMargin() });
+const randomPoolNow = () => randomPool(state.songs, state.random.opts, { voice: voice(), offset: recOffset() });
 
 function hasRandomCondition() {
   const o = state.random.opts;
@@ -2786,10 +2795,10 @@ function paintSettings() {
         <div class="note-fields">
           ${RANGE_FIELDS.map((f) => `<button type="button" class="note-field${isNote(vo[f.id]) ? ' set' : ''}" data-voice="${f.id}"><span class="nf-l">${f.label}</span><span class="nf-v">${isNote(vo[f.id]) ? fmtNoteHTML(vo[f.id]) : '未選択'}</span></button>`).join('')}
         </div>
-        <p class="hint">登録すると、曲ごとに音域に収まるキーを計算して「おすすめキー」として表示します。</p>
+        <p class="hint">登録すると、曲ごとに「おすすめキー」を表示します。</p>
         <span class="set-label">おすすめキーの余裕</span>
-        ${seg('margin', REC_MARGINS.map((m) => [m, m ? `${m}半音` : 'ギリギリまで']), p.recMargin)}
-        <p class="hint">自分の最高音（地声・裏声）より、指定した分だけ低い音までに収まるキーをおすすめします。ランダム選曲の「歌える曲」の判定にも使います。</p>
+        ${seg('offset', REC_OFFSETS.map((m) => [m, m ? `−${m}半音` : 'ちょうど']), p.recOffset)}
+        <p class="hint">おすすめキーは、曲の地声最高音が、自分の地声最高音よりこの分だけ低くなるキーです。そのキーでも最低音や裏声最高音が自分の音域を超えるときは、注意を表示します。</p>
       </section>
       <section class="set-sec">
         <h4>タグと入力補助</h4>
@@ -2891,7 +2900,7 @@ async function onSettingsClick(e) {
   if (b.dataset.randomFx) return setDevicePref({ randomFx: b.dataset.randomFx });
   if (b.dataset.accentSet) return updateAccountPrefs({ accent: b.dataset.accentSet });
   if (b.dataset.noteStyle) return updateAccountPrefs({ noteStyle: b.dataset.noteStyle });
-  if (b.dataset.margin != null) return updateAccountPrefs({ recMargin: +b.dataset.margin });
+  if (b.dataset.offset != null) return updateAccountPrefs({ recOffset: +b.dataset.offset });
   switch (b.dataset.act) {
     case 'close': state.settings.close(); break;
     case 'artists': openArtists(); break;

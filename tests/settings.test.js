@@ -26,15 +26,15 @@ test('音域の表記の切り替え', () => {
   assert.equal(fmtNoteHTML(n('mid2G')), 'mid2G');
 });
 
-test('おすすめキーに余裕を持たせると、その分だけ低いキーになる', () => {
+test('おすすめキーの余裕（既定は2半音）を変えると、その分だけキーが変わる', () => {
   const voice = { low: n('lowG'), chestHigh: n('mid2G'), falsettoHigh: n('hiC') };
   const song = { low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: null };
-  assert.equal(recommendKey(song, voice).key, -2);
-  assert.equal(recommendKey(song, voice, { margin: 2 }).key, -4);
-  // 今のキーで歌えるかの判定にも余裕を使う
-  const s = normalizeSong({ ...song, key: -2 });
-  assert.equal(fitsVoice(s, voice, 'current'), true);
-  assert.equal(fitsVoice(s, voice, 'current', 1), false);
+  assert.equal(recommendKey(song, voice).key, -4);
+  assert.equal(recommendKey(song, voice, { offset: 0 }).key, -2);
+  assert.equal(recommendKey(song, voice, { offset: 3 }).key, -5);
+  // 今のキーで歌えるかは、自分の音域そのもので判定する
+  assert.equal(fitsVoice(normalizeSong({ ...song, key: -2 }), voice, 'current'), true);
+  assert.equal(fitsVoice(normalizeSong({ ...song, key: -1 }), voice, 'current'), false);
 });
 
 test('タグの一覧は、設定で並べた順を先に、曲にだけ付いているタグを後に並べる', () => {
@@ -46,7 +46,9 @@ test('タグの一覧は、設定で並べた順を先に、曲にだけ付い�
 });
 
 test('アカウント共通の表示設定を、壊れていても安全に読み込む', () => {
-  assert.deepEqual(sanitizePrefs(undefined), { accent: 'indigo', noteStyle: 'karaoke', recMargin: 0 });
-  assert.deepEqual(sanitizePrefs({ accent: 'teal', noteStyle: 'both', recMargin: 2 }), { accent: 'teal', noteStyle: 'both', recMargin: 2 });
-  assert.deepEqual(sanitizePrefs({ accent: 'black', noteStyle: 'x', recMargin: 9 }), { accent: 'indigo', noteStyle: 'karaoke', recMargin: 0 });
+  assert.deepEqual(sanitizePrefs(undefined), { accent: 'indigo', noteStyle: 'karaoke', recOffset: 2 });
+  assert.deepEqual(sanitizePrefs({ accent: 'teal', noteStyle: 'both', recOffset: 3 }), { accent: 'teal', noteStyle: 'both', recOffset: 3 });
+  assert.deepEqual(sanitizePrefs({ accent: 'black', noteStyle: 'x', recOffset: 9 }), { accent: 'indigo', noteStyle: 'karaoke', recOffset: 2 });
+  // 以前の「余裕」（意味が違う）は引き継がない
+  assert.equal(sanitizePrefs({ recMargin: 0 }).recOffset, 2);
 });
