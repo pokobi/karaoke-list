@@ -44,12 +44,24 @@ async function search(params, { signal } = {}) {
 }
 
 export function toSong(r) {
+  const str = (v) => (typeof v === 'string' && v ? v : null);
   return {
     artist: String(r.artistName ?? ''),
     title: String(r.trackName ?? ''),
     album: String(r.collectionName ?? ''),
     artwork: artworkUrl(r.artworkUrl100),
+    trackId: Number.isInteger(r.trackId) ? r.trackId : null,
+    trackUrl: str(r.trackViewUrl),
+    previewUrl: str(r.previewUrl),
+    released: str(r.releaseDate),
   };
+}
+
+// 検索語で曲を探す（並べ替えや絞り込みはしない）。問い合わせが多すぎるときは null
+export async function searchSongs(term, { limit = 25, ...opts } = {}) {
+  const t = String(term ?? '').trim();
+  if (!t) return [];
+  return search({ term: t, limit: String(limit) }, opts);
 }
 
 // アーティスト名の候補。曲の検索結果からアーティスト名を集める

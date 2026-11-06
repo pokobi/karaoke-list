@@ -1027,6 +1027,46 @@ textarea.input { resize: vertical; min-height: 84px; }
   .random-layer .sheet { height: min(820px, calc(100% - 48px)); }
 }
 
+/* 試聴 */
+.d-pv { padding: 12px 14px 14px; border: 1px solid var(--line); border-radius: 16px; }
+.pv-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.pv-head .label { margin: 0; }
+.pv-player { display: flex; align-items: center; gap: 12px; }
+.pv-play { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); }
+.pv-play .ic { width: 22px; height: 22px; }
+.pv-play:active { background: var(--accent-2); }
+.pv-bar { flex: 1; min-width: 0; }
+.pv-seek {
+  --pv-p: 0%;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.pv-seek:disabled { cursor: default; }
+.pv-seek::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--pv-p), var(--surface-3) var(--pv-p)); }
+.pv-seek::-moz-range-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--pv-p), var(--surface-3) var(--pv-p)); }
+.pv-seek::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--accent); border: 0; }
+.pv-seek::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 0; }
+.pv-seek:disabled::-webkit-slider-thumb { background: var(--surface-3); }
+.pv-seek:disabled::-moz-range-thumb { background: var(--surface-3); }
+.pv-time { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pv-keys { margin-top: 10px; }
+.pv-msg { margin-top: 8px; font-size: 12.5px; color: var(--text-2); }
+.pv-msg.err { color: var(--danger); }
+.pv-meta { display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; color: var(--text-2); }
+.pv-name { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
+.pv-name .ic { width: 15px; height: 15px; flex: none; color: var(--text-3); }
+.pv-fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pv-name small { flex: none; color: var(--text-3); font-size: 11.5px; }
+.pv-acts { display: inline-flex; gap: 12px; margin-left: auto; }
+.pv-link { color: var(--accent); font-weight: 650; font-size: 12.5px; text-decoration: none; white-space: nowrap; }
+.d-pv > .pill + .hint { margin-top: 8px; }
+.pv-files { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; }
+
 /* ランダム選曲の演出 */
 .fx-pending { position: relative; }
 .fx-host { position: relative; overflow: hidden; }

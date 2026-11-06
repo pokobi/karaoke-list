@@ -18,6 +18,7 @@ import { plugins } from './plugins.js';
 import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, hasRandomRange } from './random.js';
 import { HAPTIC_EVENTS, sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
 import { RANDOM_FX, sanitizeRandomFx, playRandomFx } from './random-fx.js';
+import { previewSupported, createPreview, audioFiles, formatBytes } from './preview.js';
 
 const VIEW_KEY = 'karaoke-list:view:v1';
 const HOLD_MS = 1400;
@@ -764,14 +765,19 @@ function paintKeyMenu() {
 // ---- 曲の詳細 ---------------------------------------------------------
 
 function openDetail(id) {
+  let preview = null;
   const sheet = openSheet('<div class="detail"></div>', {
     label: '曲の詳細',
     className: 'detail-layer',
     onClose: () => {
+      preview?.destroy();
       if (state.detail?.sheet === sheet) state.detail = null;
     },
   });
-  state.detail = { id, sheet, sig: '' };
+  preview = previewSupported()
+    ? createPreview({ getSong: () => state.byId.get(id), sources: previewSources(), ctx: previewCtx(id) })
+    : null;
+  state.detail = { id, sheet, sig: '', preview };
   paintDetail();
   sheet.el.addEventListener('click', onDetailClick);
 }
@@ -806,6 +812,7 @@ function paintDetail() {
     td.dataset.tone = isNote(v) ? keyTone(s.key) : 'zero';
   }
   $('[data-role="rec"]', root).innerHTML = recommendHTML(s);
+  d.preview?.paint($('[data-role="preview"]', root));
 }
 
 function detailHTML(s, d) {
@@ -853,6 +860,7 @@ function detailHTML(s, d) {
       </table>
       ${pluginDetailHTML(s)}
       ${rangeActionsHTML('d-ractions')}
+      ${d.preview ? '<section class="d-sec d-pv" data-role="preview"></section>' : ''}
       <div class="d-stats">
         <div class="stat"><span class="sl">歌った回数</span><span class="sv">${s.singCount}<small>回</small></span></div>
         <div class="stat"><span class="sl">最終歌唱日</span><span class="sv">${s.lastSungAt ? fmtDate(s.lastSungAt) : '—'}</span></div>
@@ -875,6 +883,7 @@ async function onDetailClick(e) {
   const b = e.target.closest('button');
   const d = state.detail;
   if (!b || !d) return;
+  if (b.closest('[data-role="preview"]')) return;
   const s = state.byId.get(d.id);
   if (!s) return;
   if (b.dataset.k != null) {
@@ -944,6 +953,7 @@ async function removeSong(id) {
   if (!ok) return;
   if (state.detail?.id === id) state.detail.sheet.close();
   state.store.deleteSong(id);
+  removeAudioFiles([id]);
   toast('削除しました');
 }
 
@@ -1429,6 +1439,25 @@ function songPluginCtx(id) {
       });
     },
   };
+}
+
+// 追加機能が用意した、試聴の音源
+const previewSources = () => plugins.flatMap((p) => (p.previewSource ? [p.previewSource] : []));
+
+// 試聴の音源を選んだときなどに、曲の保存欄 song.ext に書く
+function previewCtx(id) {
+  return {
+    saveExt: (patch) => {
+      const s = state.byId.get(id);
+      if (!s) return;
+      state.store.updateSong(id, { ext: { ...(s.ext ?? {}), ...patch } });
+    },
+  };
+}
+
+function removeAudioFiles(ids) {
+  if (!previewSupported()) return;
+  for (const id of ids) audioFiles.remove(id).catch(() => {});
 }
 
 // 追加機能が詳細画面に足す表示
@@ -2266,6 +2295,11 @@ function paintSettings() {
         </div>
         <p class="hint">CSV は表計算ソフトで編集できます。読み込むと、まとめて登録・復元できます。</p>
       </section>
+      ${previewSupported() ? `<section class="set-sec" data-role="pv-files" hidden>
+        <h4>試聴の音楽ファイル（この端末）</h4>
+        <div class="pv-files"><span data-role="pv-sum"></span><button type="button" class="btn sm danger-ghost" data-act="pv-clear">${icon('trash')}すべて削除</button></div>
+        <p class="hint">曲の詳細画面の「試聴」で選んだファイルです。この端末にだけ保存しています。</p>
+      </section>` : ''}
       <section class="set-sec">
         <h4>アカウント</h4>
         ${local
@@ -2275,6 +2309,21 @@ function paintSettings() {
     </div>`;
   const body = $('.settings .sheet-body', sheet.el);
   if (body) body.scrollTop = scrollTop;
+  paintAudioFiles();
+}
+
+async function paintAudioFiles() {
+  const sec = state.settings && $('[data-role="pv-files"]', state.settings.el);
+  if (!sec) return;
+  let sum = null;
+  try {
+    sum = await audioFiles.summary();
+  } catch {
+    return;
+  }
+  if (!sec.isConnected) return;
+  sec.hidden = !sum.count;
+  $('[data-role="pv-sum"]', sec).textContent = `${sum.count}曲（${formatBytes(sum.bytes)}）`;
 }
 
 async function onSettingsClick(e) {
@@ -2303,6 +2352,14 @@ async function onSettingsClick(e) {
     case 'art-run': runArtJob(); break;
     case 'art-cancel': artJob.cancel = true; break;
     case 'history': $('#history-file').click(); break;
+    case 'pv-clear':
+      if (await confirmDialog({ title: '試聴の音楽ファイルをすべて削除しますか？', message: 'この端末に保存したファイルを削除します。元のファイルは消えません。', ok: '削除する', danger: true })) {
+        state.detail?.preview?.stop();
+        await audioFiles.clear().catch(() => {});
+        paintAudioFiles();
+        toast('削除しました');
+      }
+      break;
     case 'logout':
       if (await confirmDialog({ title: 'ログアウトしますか？', ok: 'ログアウト' })) {
         state.settings?.close();
@@ -2607,6 +2664,7 @@ async function onSelbarClick(e) {
     });
     if (!ok) return;
     state.store.putSongs([], sel.map((s) => s.id));
+    removeAudioFiles(sel.map((s) => s.id));
     setSelectMode(false);
     toast(`${sel.length}曲を削除しました`);
   }
