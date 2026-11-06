@@ -1630,6 +1630,8 @@ function songPluginCtx(id) {
     saves: true,
     get artist() { return get()?.artist ?? ''; },
     get title() { return get()?.title ?? ''; },
+    // 「アーティスト名 曲名 音域」で Web 検索する（追加機能で見つからなかったとき用）
+    searchWeb: () => openRangeSearch(get()?.artist, get()?.title),
     current: () => {
       const s = get();
       return Object.fromEntries(RANGE_FIELDS.map((f) => [f.id, s?.[f.id] ?? null]));
@@ -1721,6 +1723,7 @@ function openForm(song = null) {
   const pluginCtx = {
     get artist() { return form.artist.value.trim(); },
     get title() { return form.title.value.trim(); },
+    searchWeb: () => openRangeSearch(form.artist.value, form.title.value),
     current: () => ({ low: draft.low, chestHigh: draft.chestHigh, falsettoHigh: draft.falsettoHigh }),
     applyRange: (range, extPatch) => {
       for (const f of RANGE_FIELDS) if (range[f.id] !== undefined) draft[f.id] = range[f.id];
