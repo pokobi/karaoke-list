@@ -10,7 +10,11 @@ import {
 } from './model.js';
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
-import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, findTrack, waitForSlot } from './itunes.js';
+import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, findTrack, waitForSlot, searchSongs } from './itunes.js';
+import {
+  MAX_LINES, parseLines, analyzeLine, aliasMap, sanitizeAliases, scoreSongs, mergeCandidates, judge, fallbackTerms,
+  guessSong, aliasToLearn, looseKey,
+} from './text-import.js';
 import { readHistoryFile, aggregate, thumbnailUrl } from './history.js';
 import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, openPopover, closePopover, popoverAnchor, pickNote, promptDialog } from './ui.js';
 import { createLocalStore } from './store-local.js';
@@ -66,7 +70,7 @@ const state = {
   loaded: false,
   songs: [],
   byId: new Map(),
-  profile: { range: {}, artists: [], tags: null, prefs: sanitizePrefs() },
+  profile: { range: {}, artists: [], tags: null, prefs: sanitizePrefs(), aliases: {} },
   query: '',
   view: loadView(),
   visible: [],
@@ -208,6 +212,7 @@ function onData({ songs, profile }) {
     artists: Array.isArray(profile?.artists) ? profile.artists.filter((n) => typeof n === 'string') : [],
     tags: Array.isArray(profile?.tags) ? profile.tags.filter((n) => typeof n === 'string' && n.trim()) : null,
     prefs: sanitizePrefs(profile?.prefs),
+    aliases: sanitizeAliases(profile?.aliases),
   };
   applyAccountPrefs();
   const first = !state.loaded;
@@ -2259,6 +2264,406 @@ function openHistory(all, plays) {
   paint();
 }
 
+// ---- テキストから追加 -------------------------------------------------
+
+// iTunes で検索する。1 分あたりの回数の上限に達しているときは、空くまで待つ
+async function searchWhenFree(term, alive) {
+  for (let i = 0; i < 6; i++) {
+    await waitForSlot();
+    if (!alive()) return null;
+    const res = await searchSongs(term, { limit: 25 });
+    if (res) return res;
+  }
+  throw new Error('iTunes rate limited');
+}
+
+const TI_STATUS = {
+  pending: { label: '待機中', cls: 'wait' },
+  searching: { label: '調べています…', cls: 'wait' },
+  check: { label: '要確認', cls: 'check' },
+  none: { label: '見つかりません', cls: 'none' },
+  error: { label: '調べられませんでした', cls: 'none' },
+};
+const TI_FILTERS = [['all', 'すべて'], ['check', '要確認'], ['none', '見つからない'], ['dup', '登録済み・重複']];
+const TI_PER_MINUTE = 15;
+
+function openTextImport() {
+  const aliases = aliasMap(state.profile.aliases);
+  const knownArtists = new Map([...state.profile.artists, ...state.songs.map((s) => s.artist)].filter(Boolean).map((n) => [looseKey(n), n]));
+  // gen：調べている処理の世代。中止・やり直し・閉じたときに増やし、古い処理の結果を捨てる
+  const job = { gen: 0, running: false, rows: [], filter: 'all', text: '' };
+  const sheet = openSheet(`<div class="timport">
+      <div class="sheet-head"><h3>テキストから追加</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+      <div class="sheet-body" data-role="body"></div>
+      <div class="sheet-foot" data-role="foot"></div>
+    </div>`, {
+    label: 'テキストから追加',
+    className: 'history-layer',
+    onClose: () => { job.gen++; },
+  });
+  const body = $('[data-role="body"]', sheet.el);
+  const foot = $('[data-role="foot"]', sheet.el);
+
+  let registered = null;
+  const busy = (r) => r.status === 'pending' || r.status === 'searching';
+  const dupOf = (r) => {
+    if (busy(r) || !r.title) return null;
+    const k = dupKey(r);
+    registered ??= new Set(state.songs.map(dupKey));
+    if (registered.has(k)) return 'registered';
+    for (const o of job.rows) {
+      if (o === r) break;
+      if (o.checked && !busy(o) && o.title && dupKey(o) === k) return 'repeat';
+    }
+    return null;
+  };
+  const canAdd = (r) => !busy(r) && r.checked && !!r.title && !dupOf(r);
+  const kindOf = (r) => {
+    if (busy(r)) return 'wait';
+    if (dupOf(r)) return 'dup';
+    if (r.status === 'check') return 'check';
+    if (r.status === 'none' || r.status === 'error') return 'none';
+    return 'ok';
+  };
+
+  const showInput = () => {
+    job.gen++;
+    job.running = false;
+    job.rows = [];
+    sheet.dismissible = true;
+    body.innerHTML = `<p class="hint ti-lead">メモなどを貼り付けると、1行を1曲として iTunes で調べ、アーティスト名・曲名・ジャケット画像を入れます。追加する前に確認・修正できます。</p>
+      <textarea class="input ti-text" data-role="text" rows="10" placeholder="優里 - メリーゴーランド&#10;アンコール / YOASOBI&#10;ミセス ライラック" aria-label="追加する曲の一覧" autocomplete="off" autocapitalize="off" spellcheck="false">${esc(job.text)}</textarea>
+      <p class="hint">アーティスト名と曲名の順番や区切り（- や / など）は、ばらばらでも構いません。曲名だけの行も調べます。一度に${MAX_LINES}行まで調べられます。</p>`;
+    foot.className = 'sheet-foot';
+    foot.innerHTML = `<button type="button" class="btn primary" data-act="run">${icon('search')}調べる</button>`;
+  };
+
+  const start = () => {
+    const ta = $('[data-role="text"]', body);
+    job.text = ta.value;
+    let lines = parseLines(job.text);
+    if (!lines.length) {
+      toast('曲が書かれた行がありません');
+      ta.focus();
+      return;
+    }
+    if (lines.length > MAX_LINES) {
+      toast(`一度に調べられるのは${MAX_LINES}行までです。最初の${MAX_LINES}行を調べます`, { duration: 6000 });
+      lines = lines.slice(0, MAX_LINES);
+    }
+    job.rows = lines.map((line, i) => ({
+      i, line, info: analyzeLine(line, { aliases, knownArtists }), status: 'pending', cands: [], pick: null, artist: '', title: '', artwork: null, checked: false,
+    }));
+    job.filter = 'all';
+    sheet.dismissible = false;
+    body.innerHTML = '<div class="ti-status" data-role="status"></div><div class="ti-filter" data-role="filter"></div><ul class="hist-list ti-list" data-role="list"></ul>';
+    foot.className = 'sheet-foot ti-foot';
+    body.scrollTop = 0;
+    run();
+  };
+
+  const setPick = (r, s) => {
+    r.pick = s;
+    r.artist = s.artist;
+    r.title = s.title;
+    r.artwork = s.artwork ?? null;
+  };
+
+  const resolveRow = async (r, alive) => {
+    const info = r.info;
+    try {
+      let cands = mergeCandidates(scoreSongs(await searchWhenFree(info.term, alive), info));
+      if (!alive()) return;
+      let j = judge(cands, info);
+      if (j.status === 'none') {
+        for (const t of fallbackTerms(info)) {
+          const more = await searchWhenFree(t, alive);
+          if (!alive()) return;
+          cands = mergeCandidates(cands, scoreSongs(more, info));
+          j = judge(cands, info);
+          if (j.status !== 'none') break;
+        }
+      }
+      r.status = j.status;
+      r.cands = j.candidates.map((c) => c.song);
+      if (j.pick) setPick(r, j.pick.song);
+      else Object.assign(r, guessSong(info), { pick: null, artwork: null });
+    } catch (e) {
+      if (!alive()) return;
+      console.warn(e);
+      r.status = 'error';
+      Object.assign(r, guessSong(info), { pick: null, artwork: null });
+    }
+    // 要確認の行もチェックを付けておく。見つからない行・登録済みの曲は外しておく
+    r.checked = r.status === 'sure' || r.status === 'check';
+    if (dupOf(r)) r.checked = false;
+  };
+
+  const run = async () => {
+    const gen = ++job.gen;
+    const alive = () => gen === job.gen;
+    job.running = true;
+    registered = null;
+    paintAll();
+    for (const r of job.rows) {
+      if (!alive()) return;
+      if (r.status !== 'pending') continue;
+      r.status = 'searching';
+      paintRow(r);
+      await resolveRow(r, alive);
+      if (!alive()) return;
+      paintRow(r);
+      paintStatus();
+      paintFilter();
+      paintFoot();
+    }
+    job.running = false;
+    paintAll();
+  };
+
+  const stop = () => {
+    job.gen++;
+    job.running = false;
+    for (const r of job.rows) if (r.status === 'searching') r.status = 'pending';
+    paintAll();
+  };
+
+  const rowHTML = (r) => {
+    const dup = dupOf(r);
+    const st = dup ? { label: dup === 'registered' ? '登録済み' : '重複', cls: 'dup' } : TI_STATUS[r.status];
+    const wait = busy(r);
+    const can = !wait && !dup && !!r.title;
+    const art = r.artwork ? `<img src="${esc(r.artwork)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon('music');
+    return `<li class="ti-row${st ? ` is-${st.cls}` : ''}" data-i="${r.i}">
+        <input type="checkbox" data-check="${r.i}"${r.checked && can ? ' checked' : ''}${can ? '' : ' disabled'} aria-label="追加する">
+        <span class="hist-art">${art}</span>
+        <button type="button" class="ti-main" data-edit="${r.i}"${wait ? ' disabled' : ''}>
+          ${wait
+            ? `<span class="hist-t">${esc(r.line)}</span>`
+            : `<span class="hist-t">${esc(r.title || '（曲名なし）')}</span><span class="hist-a">${esc(r.artist || '（アーティスト名なし）')}</span>`}
+          <span class="ti-src">${st ? `<span class="ti-badge">${st.label}</span>` : ''}${wait ? '' : `<span class="ti-line">${esc(r.line)}</span>`}</span>
+        </button>
+        ${wait ? '' : `<button type="button" class="icon-btn ti-edit" data-edit="${r.i}" aria-label="選び直す・直す">${icon('pen')}</button>`}
+      </li>`;
+  };
+  const shown = (r) => job.filter === 'all' || kindOf(r) === job.filter;
+  const paintRow = (r) => {
+    const el = $(`.ti-row[data-i="${r.i}"]`, body);
+    if (!shown(r)) {
+      el?.remove();
+      return;
+    }
+    if (el) el.outerHTML = rowHTML(r);
+    else paintList();
+  };
+  const paintList = () => {
+    const list = $('[data-role="list"]', body);
+    if (!list) return;
+    registered = null;
+    const rows = job.rows.filter(shown);
+    list.innerHTML = rows.length ? rows.map(rowHTML).join('') : '<li class="hist-more">該当する行はありません</li>';
+  };
+  const paintFilter = () => {
+    const el = $('[data-role="filter"]', body);
+    if (!el) return;
+    const counts = {};
+    for (const r of job.rows) counts[kindOf(r)] = (counts[kindOf(r)] ?? 0) + 1;
+    if (job.filter !== 'all' && !counts[job.filter]) {
+      job.filter = 'all';
+      paintList();
+    }
+    const items = TI_FILTERS.filter(([id]) => id === 'all' || counts[id]);
+    el.innerHTML = items.length > 1
+      ? items.map(([id, label]) => `<button type="button" class="pill" data-filter="${id}" aria-pressed="${job.filter === id}">${label}${id === 'all' ? '' : ` ${counts[id]}`}</button>`).join('')
+      : '';
+  };
+  const paintStatus = () => {
+    const el = $('[data-role="status"]', body);
+    if (!el) return;
+    const total = job.rows.length;
+    const left = job.rows.filter(busy).length;
+    const min = Math.ceil(left / TI_PER_MINUTE);
+    if (job.running) {
+      el.innerHTML = `<span>調べています（${total - left} / ${total}）${min >= 2 ? `・残り約${min}分` : ''}</span><button type="button" class="link-btn" data-act="stop">中止</button>`;
+    } else if (left) {
+      el.innerHTML = `<span>${left}行はまだ調べていません</span><button type="button" class="link-btn" data-act="resume">続きを調べる</button>`;
+    } else {
+      el.innerHTML = `<span>${total}行を調べました。違う曲は、行をタップして選び直せます。</span>`;
+    }
+  };
+  const paintFoot = () => {
+    if (!job.rows.length) return;
+    const n = job.rows.filter(canAdd).length;
+    foot.innerHTML = `<button type="button" class="btn" data-act="back">テキストに戻る</button>
+      <button type="button" class="btn primary" data-act="add"${n ? '' : ' disabled'}>${n ? `${n}曲を追加` : '追加する曲がありません'}</button>`;
+  };
+  const paintAll = () => {
+    paintStatus();
+    paintFilter();
+    paintList();
+    paintFoot();
+  };
+
+  const editRow = (r) => {
+    if (!r || busy(r)) return;
+    const sub = openSheet(`<div class="ti-pick">
+        <div class="sheet-head"><h3>曲を選ぶ・直す</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+        <div class="sheet-body">
+          <p class="ti-orig">元のテキスト：<span>${esc(r.line)}</span></p>
+          <form class="ti-search" data-role="search"><input class="input" type="search" name="q" value="${esc(r.info.term)}" aria-label="検索する言葉" enterkeyhint="search" autocomplete="off"><button type="submit" class="btn sm">${icon('search')}検索</button></form>
+          <ul class="hist-list" data-role="cands"></ul>
+          <h4 class="ti-h">自分で入力する</h4>
+          <form class="ti-manual" data-role="manual" novalidate>
+            <label class="label" for="ti-artist">アーティスト</label>
+            <input id="ti-artist" class="input" name="artist" value="${esc(r.artist)}" autocomplete="off">
+            <label class="label" for="ti-title">曲名</label>
+            <input id="ti-title" class="input" name="title" value="${esc(r.title)}" autocomplete="off">
+            <button type="submit" class="btn wide">この内容にする</button>
+          </form>
+        </div>
+      </div>`, { label: '曲を選ぶ・直す', className: 'history-layer' });
+    let cands = r.cands;
+    const list = $('[data-role="cands"]', sub.el);
+    const same = (a, b) => !!a && !!b && a.artist === b.artist && a.title === b.title && a.album === b.album;
+    const paintCands = (msg) => {
+      if (msg) {
+        list.innerHTML = `<li class="hist-more">${esc(msg)}</li>`;
+        return;
+      }
+      list.innerHTML = cands.length
+        ? cands.map((s, k) => {
+          const on = same(s, r.pick);
+          return `<li><button type="button" class="hist-row ti-cand${on ? ' on' : ''}" data-k="${k}"${on ? ' aria-current="true"' : ''}>
+              <span class="hist-art">${s.artwork ? `<img src="${esc(s.artwork)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon('music')}</span>
+              <span class="hist-text"><span class="hist-t">${esc(s.title)}</span><span class="hist-a">${esc(s.artist)}${s.album ? ` · ${esc(s.album)}` : ''}</span></span>
+              ${on ? icon('check') : ''}
+            </button></li>`;
+        }).join('')
+        : '<li class="hist-more">候補がありません。検索する言葉を変えるか、下で入力してください。</li>';
+    };
+    const done = () => {
+      r.status = 'ok';
+      r.checked = true;
+      sub.close();
+      paintRow(r);
+      paintList();
+      paintFilter();
+      paintFoot();
+    };
+    paintCands();
+    sub.el.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const fd = new FormData(f);
+      if (f.dataset.role === 'search') {
+        const q = String(fd.get('q') ?? '').trim();
+        if (!q) return;
+        paintCands('探しています…');
+        try {
+          const res = await searchWhenFree(q, () => list.isConnected);
+          if (!list.isConnected) return;
+          cands = mergeCandidates(scoreSongs(res, r.info)).map((c) => c.song);
+        } catch (err) {
+          console.warn(err);
+          paintCands('探せませんでした。通信を確認してください');
+          return;
+        }
+        paintCands();
+        return;
+      }
+      const artist = String(fd.get('artist') ?? '').trim();
+      const title = String(fd.get('title') ?? '').trim();
+      if (!title) {
+        $('#ti-title', sub.el).focus();
+        return;
+      }
+      const keep = r.pick && looseKey(r.pick.artist) === looseKey(artist) && looseKey(r.pick.title) === looseKey(title);
+      if (!keep) {
+        r.pick = null;
+        r.artwork = null;
+      }
+      r.artist = artist;
+      r.title = title;
+      done();
+    });
+    sub.el.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.act === 'close') sub.close();
+      else if (b.dataset.k != null) {
+        const s = cands[+b.dataset.k];
+        if (!s) return;
+        setPick(r, s);
+        done();
+      }
+    });
+  };
+
+  const addPicked = async () => {
+    const picks = job.rows.filter(canAdd);
+    if (!picks.length) return;
+    const left = job.rows.filter(busy).length;
+    if (left && !(await confirmDialog({ title: `${picks.length}曲を追加しますか？`, message: `まだ調べていない${left}行は追加しません。`, ok: '追加する' }))) return;
+    job.gen++;
+    const now = Date.now();
+    const entries = picks.map((r, i) => ({
+      id: null,
+      data: toPayload(normalizeSong({ ...emptySong(), artist: r.artist, title: r.title, artwork: r.artwork, createdAt: now - i, updatedAt: now })),
+    }));
+    state.store.putSongs(entries);
+    const artists = [...new Set(picks.map((r) => r.artist).filter(Boolean))].filter((n) => !state.profile.artists.includes(n));
+    if (artists.length) state.store.addArtists(artists);
+    // 行に書いた略称と、選んだアーティスト名を覚えて、次から使う
+    const learned = {};
+    for (const r of picks) {
+      const a = aliasToLearn(r.info, r.artist, r.title);
+      if (a && aliases.get(a[0]) !== a[1]) learned[a[0]] = a[1];
+    }
+    if (Object.keys(learned).length) state.store.updateProfile({ aliases: sanitizeAliases({ ...state.profile.aliases, ...learned }) });
+    sheet.close();
+    toast(`${picks.length}曲を追加しました`);
+  };
+
+  sheet.el.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    if (b.dataset.edit != null) {
+      editRow(job.rows[+b.dataset.edit]);
+      return;
+    }
+    if (b.dataset.filter) {
+      job.filter = b.dataset.filter;
+      paintFilter();
+      paintList();
+      return;
+    }
+    switch (b.dataset.act) {
+      case 'close':
+        if (job.rows.length && !(await confirmDialog({ title: '閉じますか？', message: '調べた結果は消えます（まだ追加していません）。', ok: '閉じる' }))) return;
+        sheet.close();
+        break;
+      case 'run': start(); break;
+      case 'stop': stop(); break;
+      case 'resume': run(); break;
+      case 'back':
+        if (await confirmDialog({ title: 'テキストに戻りますか？', message: '調べた結果は消えます。テキストはそのまま残ります。', ok: '戻る' })) showInput();
+        break;
+      case 'add': addPicked(); break;
+      default:
+    }
+  });
+  sheet.el.addEventListener('change', (e) => {
+    const i = e.target.dataset.check;
+    if (i == null) return;
+    job.rows[+i].checked = e.target.checked;
+    paintList();
+    paintFilter();
+    paintFoot();
+  });
+  showInput();
+  setTimeout(() => $('[data-role="text"]', body)?.focus({ preventScroll: true }), 80);
+}
+
 // ---- 設定 -------------------------------------------------------------
 
 function openSettings() {
@@ -2360,7 +2765,9 @@ function paintSettings() {
         <p class="hint">画像が未設定の曲を iTunes で探して入れます。1曲に数秒かかるので、曲数が多いときは時間がかかります。</p>
       </section>
       <section class="set-sec">
-        <h4>再生履歴から追加</h4>
+        <h4>まとめて追加</h4>
+        <button type="button" class="btn wide" data-act="text-import">${icon('list')}テキストから追加</button>
+        <p class="hint">メモなどに書いた曲の一覧（「アーティスト名 - 曲名」など）を貼り付けると、iTunes で調べて、確認してからまとめて追加できます。</p>
         <button type="button" class="btn wide" data-act="history">${icon('history')}YouTube Music の再生履歴を読み込む</button>
         <p class="hint">Google Takeout で書き出した watch-history.json（ZIP のままでも可）から、よく聴いている曲を候補に出します。履歴はこの端末の中だけで読み込み、どこにも保存しません。</p>
       </section>
@@ -2451,6 +2858,7 @@ async function onSettingsClick(e) {
     case 'art-run': runArtJob(); break;
     case 'art-cancel': artJob.cancel = true; break;
     case 'history': $('#history-file').click(); break;
+    case 'text-import': openTextImport(); break;
     case 'pv-clear':
       if (await confirmDialog({ title: '試聴の音楽ファイルをすべて削除しますか？', message: 'この端末に保存したファイルを削除します。元のファイルは消えません。', ok: '削除する', danger: true })) {
         state.detail?.preview?.stop();

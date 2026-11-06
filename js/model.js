@@ -261,7 +261,7 @@ const randomId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, ''
 
 // 移す中身を決める。アカウントにある曲には手を加えず、同じアーティスト・曲名の曲は追加しない。
 // 曲の ID はそのまま使う（試聴の音楽ファイルが曲の ID で結び付いているため）。アカウントの曲と ID が重なるときだけ新しくする。
-// 音域・タグ・アーティスト名の候補・表示の設定は、アカウントにないものだけを足す。
+// 音域・タグ・アーティスト名の候補・表示の設定・覚えた略称は、アカウントにないものだけを足す。
 // 戻り値：add（[{ id, from, data }]）、skipped（追加しない曲 [{ from, to }]）、profile（updateProfile に渡す値）、artists（addArtists に渡す値）
 export function planLocalMove(local, account, newId = randomId) {
   const accSongs = (account?.songs ?? []).map(normalizeSong);
@@ -303,6 +303,12 @@ export function planLocalMove(local, account, newId = randomId) {
     if (extra.length) profile.tags = [...base, ...extra];
   }
   if (!obj(ap.prefs) && obj(lp.prefs)) profile.prefs = sanitizePrefs(lp.prefs);
+  const la = obj(lp.aliases);
+  if (la) {
+    const aa = obj(ap.aliases) ?? {};
+    const add = Object.entries(la).filter(([k, v]) => !(k in aa) && typeof v === 'string' && v);
+    if (add.length) profile.aliases = { ...aa, ...Object.fromEntries(add) };
+  }
   const have = new Set(Array.isArray(ap.artists) ? ap.artists : []);
   const artists = [...new Set((Array.isArray(lp.artists) ? lp.artists : []).filter((n) => typeof n === 'string' && n && !have.has(n)))];
   return { add, skipped, profile, artists };

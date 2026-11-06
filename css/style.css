@@ -1130,6 +1130,39 @@ textarea.input { resize: vertical; min-height: 84px; }
 .hap-sec.off .switch-row:has([data-hap]) { opacity: .45; }
 .hap-sec.off .switch-row:has([data-hap]) { cursor: default; }
 
+/* テキストから追加 */
+.set-sec .hint + .btn.wide { margin-top: 14px; }
+.ti-lead { margin: 0 0 10px; }
+.ti-text { min-height: 220px; font-size: 15px; line-height: 1.6; }
+.ti-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; font-size: 13.5px; line-height: 1.5; color: var(--text-2); margin-bottom: 6px; }
+.ti-status .link-btn { flex: none; }
+.ti-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.ti-filter:empty { display: none; }
+.ti-row { display: flex; align-items: center; gap: 10px; min-height: 64px; border-bottom: 1px solid var(--line); }
+.ti-row > input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+.ti-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 1px; padding: 8px 0; text-align: left; line-height: 1.35; }
+.ti-src { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; color: var(--text-3); }
+.ti-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ti-badge { flex: none; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: var(--surface-2); color: var(--text-2); }
+.ti-row.is-check .ti-badge { background: color-mix(in srgb, var(--star) 22%, transparent); color: color-mix(in srgb, var(--star) 60%, var(--text)); }
+.ti-row.is-none .ti-badge { background: var(--danger-weak); color: var(--danger); }
+.ti-row.is-dup { opacity: .6; }
+.ti-row.is-wait .hist-t { color: var(--text-2); font-weight: 500; }
+.ti-edit { flex: none; color: var(--text-3); }
+.ti-foot { justify-content: space-between; }
+.ti-orig { font-size: 13px; color: var(--text-2); margin-bottom: 10px; overflow-wrap: anywhere; }
+.ti-orig span { color: var(--text); font-weight: 600; }
+.ti-search { display: flex; gap: 8px; margin-bottom: 6px; }
+.ti-search .input { flex: 1; min-width: 0; min-height: 40px; padding: 8px 12px; }
+.ti-search .btn { min-height: 40px; }
+.ti-cand { width: 100%; padding: 0 6px; text-align: left; border-radius: 10px; }
+.ti-cand.on { background: var(--accent-weak); }
+.ti-cand > .ic { flex: none; color: var(--accent); }
+.ti-h { font-size: 13px; font-weight: 700; color: var(--text-2); margin: 20px 0 8px; }
+.ti-manual { display: flex; flex-direction: column; }
+.ti-manual .input + .label { margin-top: 10px; }
+.ti-manual .btn { margin-top: 12px; }
+
 /* 再生履歴から追加 */
 .history-layer .sheet { height: calc(100% - 28px - env(safe-area-inset-top)); }
 .hist-sum { margin: 0 0 4px; }

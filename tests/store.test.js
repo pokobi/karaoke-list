@@ -170,4 +170,7 @@ test('この端末の音域・タグ・候補・表示の設定は、アカウ�
   const kept = planLocalMove({ songs: [], profile: { tags: ['練習中'] } }, { songs: [], profile: { tags: ['得意'] } });
   assert.deepEqual(kept.profile.tags, ['得意', '練習中']);
   assert.deepEqual(planLocalMove({ songs: [], profile: {} }, { songs: [], profile: {} }), { add: [], skipped: [], profile: {}, artists: [] });
+  // 覚えた略称も、アカウントにないものだけを足す
+  const al = planLocalMove({ songs: [], profile: { aliases: { a: 'A', b: 'B' } } }, { songs: [], profile: { aliases: { a: 'X' } } });
+  assert.deepEqual(al.profile.aliases, { a: 'X', b: 'B' });
 });
