@@ -187,3 +187,41 @@ export function bestMatch(songs, artist, title) {
   }
   return artist ? null : fallback;
 }
+
+// ---- 試聴に使う曲を選ぶ（itunes-preview.js） ----
+
+// ライブ版・インスト版などの印
+const PREVIEW_VARIANT = /live|ライブ|instrumental|インスト|off\s*vocal|karaoke|カラオケ|remix|リミックス|acoustic|アコースティック|tv\s*size|tv\s*ver|short\s*ver|cover|カバー|orchestra|オーケストラ/i;
+
+// 試聴できる曲だけを、登録した曲に近い順に並べる。
+// 曲名・アーティストが合うものを先に、ライブ版などは後に。同じくらいなら発売が早いもの（元の版）を先に
+export function rankPreviews(songs, artist, title) {
+  const t = squash(title);
+  const tb = squash(baseTitle(title));
+  const wantVariant = PREVIEW_VARIANT.test(title);
+  return (songs ?? [])
+    .filter((s) => s?.previewUrl)
+    .map((s, i) => {
+      let score = 0;
+      const st = squash(s.title);
+      if (st === t) score += 6;
+      else if (squash(baseTitle(s.title)) === tb) score += 3;
+      else if (tb && (st.includes(tb) || tb.includes(st))) score += 1;
+      else score -= 4;
+      if (artist) score += sameArtist(s.artist, artist) ? 4 : -3;
+      if (!wantVariant) {
+        const extra = s.title.slice(baseTitle(s.title).length);
+        if (PREVIEW_VARIANT.test(extra)) score -= 3;
+        if (PREVIEW_VARIANT.test(s.album ?? '')) score -= 2;
+      }
+      const date = Date.parse(s.released ?? '');
+      return { s, score, i, date: Number.isFinite(date) ? date : Infinity };
+    })
+    .sort((a, b) => b.score - a.score || a.date - b.date || a.i - b.i)
+    .map((x) => x.s);
+}
+
+export function releaseYear(s) {
+  const m = /^(\d{4})/.exec(s?.released ?? '');
+  return m ? m[1] : '';
+}

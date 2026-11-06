@@ -25,6 +25,7 @@ import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, rand
 import { HAPTIC_EVENTS, sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
 import { RANDOM_FX, sanitizeRandomFx, playRandomFx } from './random-fx.js';
 import { previewSupported, createPreview, audioFiles, formatBytes } from './preview.js';
+import { itunesPreviewSource } from './itunes-preview.js';
 
 const VIEW_KEY = 'karaoke-list:view:v1';
 // ログインの操作をしたしるし（ページを移動してログインする場合に備えて、タブの中だけに残す）
@@ -1542,7 +1543,7 @@ function songPluginCtx(id) {
 }
 
 // 追加機能が用意した、試聴の音源
-const previewSources = () => plugins.flatMap((p) => (p.previewSource ? [p.previewSource] : []));
+const previewSources = () => [itunesPreviewSource, ...plugins.flatMap((p) => (p.previewSource ? [p.previewSource] : []))];
 
 // 試聴の音源を選んだときなどに、曲の保存欄 song.ext に書く
 function previewCtx(id) {

@@ -71,6 +71,17 @@ export function formatTime(sec) {
 
 const engine = { ctx: null, audio: null, node: null, gain: null, ready: null, owner: null, unlocked: false };
 
+// Apple Music の公式バッジ（Apple のマーケティングツールが配っている画像）
+const APPLE_MUSIC_BADGE = 'https://toolbox.marketingtools.apple.com/api/v2/badges/listen-on-apple-music/badge/ja-jp?size=250x83';
+
+function linkHTML(link) {
+  if (!link) return '';
+  if (link.badge === 'apple-music') {
+    return `<a class="pv-badge" href="${esc(link.href)}" target="_blank" rel="noopener noreferrer"><img src="${APPLE_MUSIC_BADGE}" alt="${esc(link.label)}" width="105" height="35" referrerpolicy="no-referrer"></a>`;
+  }
+  return `<a class="pv-link" href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(link.label)}</a>`;
+}
+
 // ---- 音量（PC など、マウスで操作する端末で表示する。この端末に保存する） ----------
 
 const VOLUME_KEY = 'karaoke-list:preview-volume:v1';
@@ -525,7 +536,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     return `<div class="pv-meta">
         <span class="pv-name">${icon('music')}<span class="pv-fname">${info?.text ? esc(info.text) : esc(src.hint ?? '')}</span></span>
         <span class="pv-acts">
-          ${info?.link ? `<a class="pv-link" href="${esc(info.link.href)}" target="_blank" rel="noopener noreferrer">${esc(info.link.label)}</a>` : ''}
+          ${linkHTML(info?.link)}
           ${src.pick ? `<button type="button" class="pv-link" data-pv="pick-src">${esc(src.pick.label)}</button>` : ''}
         </span>
       </div>`;

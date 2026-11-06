@@ -1073,6 +1073,20 @@ textarea.input { resize: vertical; min-height: 84px; }
   cursor: pointer;
 }
 .pv-seek:disabled { cursor: default; }
+.pv-badge { flex: none; display: inline-flex; border-radius: 7px; }
+.pv-badge img { display: block; width: 105px; height: 35px; }
+/* iTunes の試聴の音源を選ぶ画面 */
+.itp .itp-search { display: flex; gap: 8px; margin-bottom: 12px; }
+.itp .itp-search .input { flex: 1; min-width: 0; min-height: 40px; padding: 8px 12px; }
+.itp .itp-search .btn { min-height: 40px; }
+.itp .itp-list { display: flex; flex-direction: column; gap: 6px; }
+.itp .itp-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); text-align: left; }
+.itp .itp-item.on { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: var(--accent-weak); }
+.itp .itp-item img, .itp .itp-noart { flex: none; width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: var(--surface-2); display: grid; place-items: center; color: var(--text-3); }
+.itp .itp-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.itp .itp-title { font-size: 14.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.itp .itp-sub { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.itp .itp-item > .ic { flex: none; color: var(--accent); width: 20px; height: 20px; }
 /* 音量（マウスで操作する端末だけ。スマホは本体のボタンで変える） */
 .pv-vol { display: none; flex: none; align-items: center; gap: 2px; }
 @media (hover: hover) and (pointer: fine) {
@@ -1101,7 +1115,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .pv-name .ic { width: 15px; height: 15px; flex: none; color: var(--text-3); }
 .pv-fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pv-name small { flex: none; color: var(--text-3); font-size: 11.5px; }
-.pv-acts { display: inline-flex; gap: 12px; margin-left: auto; }
+.pv-acts { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; }
 .pv-link { color: var(--accent); font-weight: 650; font-size: 12.5px; text-decoration: none; white-space: nowrap; }
 .d-pv > .pill + .hint { margin-top: 8px; }
 .pv-files { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; }
