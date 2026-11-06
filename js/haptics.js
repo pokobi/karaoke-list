@@ -20,14 +20,23 @@ export const HAPTIC_EVENTS = [
 // 操作ごとの振動の種類。tap：1 回／success：記録できたことが分かるよう、少し多めに
 const KIND = { key: 'tap', fav: 'tap', sung: 'success', test: 'tap' };
 
-// Android：震える長さ（ミリ秒）
-const MS = { weak: 10, medium: 22, strong: 40 };
+// Android の振動の種類。Web からは「何ミリ秒震わせるか」しか指定できないため、
+// ごく短く震わせて、端末の「ポコッ」とした触覚に近づける候補を用意する。
+// ms：強さ（弱・中・強）ごとの震える長さ（ミリ秒）、pulses：1 回の操作で震える回数
+export const HAPTIC_TYPES = [
+  { id: 'pop', label: 'ポコッ', desc: 'ごく短く 1 回', ms: { weak: 4, medium: 6, strong: 9 }, pulses: 1 },
+  { id: 'click', label: 'コツッ', desc: '短く 1 回', ms: { weak: 8, medium: 12, strong: 18 }, pulses: 1 },
+  { id: 'double', label: 'ポコポコ', desc: 'ごく短く 2 回', ms: { weak: 4, medium: 6, strong: 9 }, pulses: 2 },
+  { id: 'standard', label: '標準', desc: '長めに 1 回', ms: { weak: 10, medium: 22, strong: 40 }, pulses: 1 },
+];
+const typeOf = (id) => HAPTIC_TYPES.find((t) => t.id === id) ?? HAPTIC_TYPES.at(-1);
+
 // iPhone：鳴らす回数と間隔（ミリ秒）
 const TICKS = { weak: 1, medium: 2, strong: 3 };
 const TICK_GAP = 110;
 
 export function defaultHaptics() {
-  return { on: true, level: 'medium', key: true, sung: true, fav: true };
+  return { on: true, level: 'medium', type: 'standard', key: true, sung: true, fav: true };
 }
 
 export function sanitizeHaptics(raw) {
@@ -36,14 +45,22 @@ export function sanitizeHaptics(raw) {
   const out = {
     on: p.on !== false,
     level: HAPTIC_LEVELS.some((l) => l.id === p.level) ? p.level : d.level,
+    type: HAPTIC_TYPES.some((t) => t.id === p.type) ? p.type : d.type,
   };
   for (const ev of HAPTIC_EVENTS) out[ev.id] = p[ev.id] !== false;
   return out;
 }
 
-export function vibratePattern(kind, level) {
-  const ms = MS[level] ?? MS.medium;
-  return kind === 'success' ? [ms, 70, ms] : [ms];
+export function vibratePattern(kind, level, type = 'standard') {
+  const t = typeOf(type);
+  const ms = t.ms[level] ?? t.ms.medium;
+  const one = t.pulses === 2 ? [ms, 45, ms] : [ms];
+  return kind === 'success' ? [...one, t.pulses === 2 ? 90 : 70, ...one] : one;
+}
+
+// スワイプが実行される位置を超えたとき：選んだ種類の「弱」で 1 回だけ
+export function swipePattern(type = 'standard') {
+  return [typeOf(type).ms.weak];
 }
 
 export function tickCount(kind, level) {
@@ -98,7 +115,7 @@ export function playHaptic(event, prefs, e = browserEnv()) {
   if (event in p && !p[event]) return false;
   try {
     if (e.mode === 'vibrate') {
-      e.vibrate(event === 'swipe' ? [8] : vibratePattern(KIND[event] ?? 'tap', p.level));
+      e.vibrate(event === 'swipe' ? swipePattern(p.type) : vibratePattern(KIND[event] ?? 'tap', p.level, p.type));
       return true;
     }
     // iPhone では、指を動かしている途中（スワイプ中）には鳴らせない
