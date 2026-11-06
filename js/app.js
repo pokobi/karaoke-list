@@ -1560,8 +1560,8 @@ function rangeActionsHTML(extraClass = '') {
   return `<div class="range-actions${extraClass ? ` ${extraClass}` : ''}">${actions.map((a, i) => `<button type="button" class="pill" data-plugin="${i}">${icon(a.icon ?? 'search')}${esc(a.label)}</button>`).join('')}<button type="button" class="pill" data-act="range-web">${icon('external')}Webで音域を検索</button></div>`;
 }
 
-// 「アーティスト名 曲名 音域」で Web 検索する。Google のアカウントの履歴に残らないよう、Startpage（中身は Google の検索結果）を使う
-const WEB_SEARCH_URL = 'https://www.startpage.com/sp/search?query=';
+// 「アーティスト名 曲名 音域」で Web 検索する。Google のアカウントの履歴に残らないよう、DuckDuckGo（日本の検索結果）を使う
+const WEB_SEARCH_URL = 'https://duckduckgo.com/?kl=jp-jp&q=';
 function openRangeSearch(artist, title) {
   const t = String(title ?? '').trim();
   if (!t) {
