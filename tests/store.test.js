@@ -174,3 +174,17 @@ test('この端末の音域・タグ・候補・表示の設定は、アカウ�
   const al = planLocalMove({ songs: [], profile: { aliases: { a: 'A', b: 'B' } } }, { songs: [], profile: { aliases: { a: 'X' } } });
   assert.deepEqual(al.profile.aliases, { a: 'X', b: 'B' });
 });
+
+test('タグの色は [{ tag, color }] で保存し、知らない色や壊れた値は捨てる', async () => {
+  const { tagColorMap, tagColorList } = await import('../js/model.js');
+  const m = tagColorMap([{ tag: 'B', color: 'red' }, { tag: 'x', color: 'neon' }, { tag: '', color: 'red' }, null, 'bad']);
+  assert.deepEqual([...m], [['B', 'red']]);
+  assert.deepEqual(tagColorList(m), [{ tag: 'B', color: 'red' }]);
+  assert.equal(tagColorMap({ B: 'red' }).size, 0);
+  // この端末からアカウントへ移すときは、アカウントで色が決まっていないタグだけ足す
+  const plan = planLocalMove(
+    { songs: [], profile: { tagColors: [{ tag: 'B', color: 'red' }, { tag: '練習中', color: 'green' }] } },
+    { songs: [], profile: { tagColors: [{ tag: 'B', color: 'blue' }] } },
+  );
+  assert.deepEqual(plan.profile.tagColors, [{ tag: 'B', color: 'blue' }, { tag: '練習中', color: 'green' }]);
+});

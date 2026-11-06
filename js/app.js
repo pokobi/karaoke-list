@@ -7,6 +7,7 @@ import { collator, normalize } from './text.js';
 import {
   SORTS, emptySong, normalizeSong, toPayload, dupKey, sanitizeView, defaultView, applyView, hasRangeFilter,
   artistCounts, allTags, suggestArtists, tagCounts, ACCENTS, NOTE_STYLES, REC_MARGINS, sanitizePrefs, planLocalMove,
+  TAG_COLORS, tagColorMap, tagColorList,
 } from './model.js';
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
@@ -70,7 +71,7 @@ const state = {
   loaded: false,
   songs: [],
   byId: new Map(),
-  profile: { range: {}, artists: [], tags: null, prefs: sanitizePrefs(), aliases: {} },
+  profile: { range: {}, artists: [], tags: null, prefs: sanitizePrefs(), aliases: {}, tagColors: new Map() },
   query: '',
   view: loadView(),
   visible: [],
@@ -213,6 +214,7 @@ function onData({ songs, profile }) {
     tags: Array.isArray(profile?.tags) ? profile.tags.filter((n) => typeof n === 'string' && n.trim()) : null,
     prefs: sanitizePrefs(profile?.prefs),
     aliases: sanitizeAliases(profile?.aliases),
+    tagColors: tagColorMap(profile?.tagColors),
   };
   applyAccountPrefs();
   const first = !state.loaded;
@@ -418,7 +420,7 @@ function createItem(id) {
 }
 
 function updateItem(it, s) {
-  const sig = [s.title, s.artist, s.favorite, s.singCount, s.tags.join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork].join('\u0001');
+  const sig = [s.title, s.artist, s.favorite, s.singCount, s.tags.map((t) => `${t}:${state.profile.tagColors.get(t) ?? ''}`).join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork].join('\u0001');
   if (sig === it.sig) return;
   it.sig = sig;
   if (s.artwork) {
@@ -438,7 +440,7 @@ function updateItem(it, s) {
   it.fav.style.display = s.favorite ? '' : 'none';
   it.swR.textContent = s.favorite ? '解除' : 'お気に入り';
   const shown = s.tags.slice(0, 2);
-  it.tags.innerHTML = shown.map((t) => `<span class="tag">${esc(t)}</span>`).join('') + (s.tags.length > 2 ? `<span class="tag more">+${s.tags.length - 2}</span>` : '');
+  it.tags.innerHTML = shown.map((t) => `<span class="tag"${tagC(t)}>${esc(t)}</span>`).join('') + (s.tags.length > 2 ? `<span class="tag more">+${s.tags.length - 2}</span>` : '');
   RANGE_FIELDS.forEach((f, i) => {
     const v = s[f.id];
     const el = it.rv[i];
@@ -542,7 +544,7 @@ function renderFilterPanel() {
   if (v.artist && !counts.has(v.artist)) names.unshift(v.artist);
   $('#f-artist').innerHTML = `<option value="">すべてのアーティスト</option>`
     + names.map((n) => `<option value="${esc(n)}"${n === v.artist ? ' selected' : ''}>${esc(n)}（${counts.get(n) ?? 0}）</option>`).join('');
-  $('#f-tags').innerHTML = tags.map((t) => `<button type="button" class="chip${v.tags.includes(t) ? ' on' : ''}" data-tag="${esc(t)}" aria-pressed="${v.tags.includes(t)}">${esc(t)}</button>`).join('');
+  $('#f-tags').innerHTML = tags.map((t) => `<button type="button" class="chip${v.tags.includes(t) ? ' on' : ''}"${tagC(t)} data-tag="${esc(t)}" aria-pressed="${v.tags.includes(t)}">${esc(t)}</button>`).join('');
   $$('#f-basis button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v.basis)));
   $('#f-range').innerHTML = RANGE_FIELDS.map((f) => {
     const { min, max } = v.range[f.id] ?? {};
@@ -952,7 +954,7 @@ function detailHTML(s, d) {
       <button type="button" class="btn primary wide sung" data-act="sung">${icon('mic')}歌った！</button>
       <section class="d-sec d-tagsec">
         <span class="label">タグ</span>
-        <div class="chip-set">${tagList().map((t) => `<button type="button" class="chip${s.tags.includes(t) ? ' on' : ''}" data-dtag="${esc(t)}" aria-pressed="${s.tags.includes(t)}">${esc(t)}</button>`).join('')}<button type="button" class="chip add" data-act="tag-new">${icon('plus')}新しいタグ</button></div>
+        <div class="chip-set">${tagList().map((t) => `<button type="button" class="chip${s.tags.includes(t) ? ' on' : ''}"${tagC(t)} data-dtag="${esc(t)}" aria-pressed="${s.tags.includes(t)}">${esc(t)}</button>`).join('')}<button type="button" class="chip add" data-act="tag-new">${icon('plus')}新しいタグ</button></div>
       </section>
       ${s.memo ? `<div class="d-memo">${esc(s.memo)}</div>` : ''}
     </div>
@@ -975,6 +977,10 @@ async function onDetailClick(e) {
   }
   if (b.dataset.plugin != null) {
     runRangeAction(+b.dataset.plugin, songPluginCtx(s.id));
+    return;
+  }
+  if (b.dataset.act === 'range-web') {
+    openRangeSearch(s.artist, s.title);
     return;
   }
   if (b.dataset.dtag != null) {
@@ -1284,7 +1290,7 @@ function paintRandomConditions() {
     </div>
     <div class="fp-sec">
       <span class="label">タグ</span>
-      <div class="chip-set">${tags.map((t) => `<button type="button" class="chip${o.tags.includes(t) ? ' on' : ''}" data-tag="${esc(t)}" aria-pressed="${o.tags.includes(t)}">${esc(t)}</button>`).join('')}</div>
+      <div class="chip-set">${tags.map((t) => `<button type="button" class="chip${o.tags.includes(t) ? ' on' : ''}"${tagC(t)} data-tag="${esc(t)}" aria-pressed="${o.tags.includes(t)}">${esc(t)}</button>`).join('')}</div>
     </div>
     <div class="fp-sec">
       <label class="switch-row"><span>自分の音域で歌える曲だけ</span><input type="checkbox" class="switch" data-opt="fitsVoice"${o.fitsVoice && voiceOk ? ' checked' : ''}${voiceOk ? '' : ' disabled'}></label>
@@ -1480,8 +1486,19 @@ const rangeActions = () => plugins.flatMap((p) => (p.rangeAction ? [p.rangeActio
 
 function rangeActionsHTML(extraClass = '') {
   const actions = rangeActions();
-  if (!actions.length) return '';
-  return `<div class="range-actions${extraClass ? ` ${extraClass}` : ''}">${actions.map((a, i) => `<button type="button" class="pill" data-plugin="${i}">${icon(a.icon ?? 'search')}${esc(a.label)}</button>`).join('')}</div>`;
+  return `<div class="range-actions${extraClass ? ` ${extraClass}` : ''}">${actions.map((a, i) => `<button type="button" class="pill" data-plugin="${i}">${icon(a.icon ?? 'search')}${esc(a.label)}</button>`).join('')}<button type="button" class="pill" data-act="range-web">${icon('external')}Webで音域を検索</button></div>`;
+}
+
+// 「アーティスト名 曲名 音域」で Web 検索する。Google のアカウントの履歴に残らないよう、Startpage（中身は Google の検索結果）を使う
+const WEB_SEARCH_URL = 'https://www.startpage.com/sp/search?query=';
+function openRangeSearch(artist, title) {
+  const t = String(title ?? '').trim();
+  if (!t) {
+    toast('曲名を入れてから検索してください');
+    return;
+  }
+  const q = [String(artist ?? '').trim(), t, '音域'].filter(Boolean).join(' ');
+  window.open(WEB_SEARCH_URL + encodeURIComponent(q), '_blank', 'noopener');
 }
 
 async function runRangeAction(index, ctx) {
@@ -1641,7 +1658,7 @@ function openForm(song = null) {
     const tags = [...new Set([...tagList(), ...extraTags, ...draft.tags])];
     el('[data-role="tags"]').innerHTML = tags.map((t) => {
       const on = draft.tags.includes(t);
-      return `<button type="button" class="chip${on ? ' on' : ''}" data-tag="${esc(t)}" aria-pressed="${on}">${esc(t)}</button>`;
+      return `<button type="button" class="chip${on ? ' on' : ''}"${tagC(t)} data-tag="${esc(t)}" aria-pressed="${on}">${esc(t)}</button>`;
     }).join('');
   };
 
@@ -1712,6 +1729,10 @@ function openForm(song = null) {
     }
     if (b.dataset.plugin != null) {
       await runRangeAction(+b.dataset.plugin, pluginCtx);
+      return;
+    }
+    if (b.dataset.act === 'range-web') {
+      openRangeSearch(form.artist.value, form.title.value);
       return;
     }
     if (b.dataset.field) {
@@ -3016,6 +3037,12 @@ function renameTag(oldName, newName) {
     .filter((s) => s.tags.includes(oldName))
     .map((s) => ({ id: s.id, data: { tags: [...new Set(s.tags.map((t) => (t === oldName ? n : t)))] } }));
   if (entries.length) state.store.putSongs(entries);
+  const colors = new Map(state.profile.tagColors);
+  if (colors.has(oldName)) {
+    if (!colors.has(n)) colors.set(n, colors.get(oldName));
+    colors.delete(oldName);
+    saveTagColors(colors);
+  }
   replaceTagInConditions(oldName, n);
   toast(`「${oldName}」を「${n}」に変えました${entries.length ? `（${entries.length}曲）` : ''}`);
 }
@@ -3034,8 +3061,56 @@ async function deleteTag(name) {
   state.store.updateProfile({ tags: next });
   const entries = state.songs.filter((s) => s.tags.includes(name)).map((s) => ({ id: s.id, data: { tags: s.tags.filter((t) => t !== name) } }));
   if (entries.length) state.store.putSongs(entries);
+  if (state.profile.tagColors.has(name)) {
+    const colors = new Map(state.profile.tagColors);
+    colors.delete(name);
+    saveTagColors(colors);
+  }
   replaceTagInConditions(name, null);
   toast(`タグ「${name}」を削除しました`);
+}
+
+// タグの色（見た目用の属性）。標準の色のタグは何も付けない
+function tagC(t) {
+  const c = state.profile.tagColors.get(t);
+  return c ? ` data-c="${c}"` : '';
+}
+
+function saveTagColors(map) {
+  state.profile.tagColors = map;
+  state.store.updateProfile({ tagColors: tagColorList(map) });
+}
+
+// color：TAG_COLORS の id。'' なら標準の色（アクセントカラー）に戻す
+function setTagColor(name, color) {
+  const map = new Map(state.profile.tagColors);
+  if (color) map.set(name, color);
+  else map.delete(name);
+  saveTagColors(map);
+  render();
+  paintDetail();
+}
+
+// タグの色を選ぶ。戻り値：TAG_COLORS の id か ''（標準）。閉じたときは undefined
+function pickTagColor(name) {
+  const cur = state.profile.tagColors.get(name) ?? '';
+  return new Promise((resolve) => {
+    let picked;
+    const sw = (id, label) => `<button type="button" class="tc-sw" data-color="${id}" aria-pressed="${cur === id}" aria-label="${esc(label)}"><span class="tag"${id ? ` data-c="${id}"` : ''}>${esc(name)}</span></button>`;
+    const s = openSheet(`<div class="dlg">
+        <h3 class="dlg-title">「${esc(name)}」の色</h3>
+        <div class="tc-grid">${sw('', '標準（アクセントカラー）')}${TAG_COLORS.map((c) => sw(c.id, c.label)).join('')}</div>
+        <div class="dlg-actions"><button type="button" class="btn" data-act="cancel">キャンセル</button></div>
+      </div>`, { variant: 'dialog', label: `「${name}」の色`, onClose: () => resolve(picked) });
+    s.el.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.color != null) {
+        picked = b.dataset.color;
+        s.close();
+      } else if (b.dataset.act === 'cancel') s.close();
+    });
+  });
 }
 
 function moveTag(name, dir) {
@@ -3061,7 +3136,7 @@ function openTagManager() {
   const sheet = openSheet(`<div class="tags-mgr">
       <div class="sheet-head"><h3>タグの管理</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
       <div class="sheet-body">
-        <p class="hint">作ったタグは、曲の登録・詳細画面、一覧の絞り込み、ランダム選曲で使えます。名前を変えると、付いている曲すべてに反映されます。</p>
+        <p class="hint">作ったタグは、曲の登録・詳細画面、一覧の絞り込み、ランダム選曲で使えます。名前を変えると、付いている曲すべてに反映されます。左の丸をタップすると、タグの色を変えられます。</p>
         <form class="tag-new" data-role="new-form">
           <input class="input" data-role="new" placeholder="新しいタグ" maxlength="20" enterkeyhint="done" autocomplete="off" aria-label="新しいタグ">
           <button type="submit" class="btn">追加</button>
@@ -3097,6 +3172,11 @@ function openTagManager() {
         break;
       }
       case 'delete': await deleteTag(name); break;
+      case 'color': {
+        const c = await pickTagColor(name);
+        if (c !== undefined) setTagColor(name, c);
+        break;
+      }
       default:
     }
     paintTagManager();
@@ -3111,6 +3191,7 @@ function paintTagManager() {
   const counts = tagCounts(state.songs);
   $('[data-role="list"]', sheet.el).innerHTML = list.length
     ? list.map((t, i) => `<li class="tag-row" data-tag-row="${esc(t)}">
+        <button type="button" class="tag-dot" data-act="color"${tagC(t)} aria-label="「${esc(t)}」の色を変える"></button>
         <span class="tag-name">${esc(t)}</span>
         <span class="tag-count">${counts.get(t) ?? 0}曲</span>
         <button type="button" class="icon-btn sm" data-act="up" aria-label="上へ"${i === 0 ? ' disabled' : ''}>${icon('arrow-up')}</button>
@@ -3227,7 +3308,7 @@ function paintBulkTags() {
   $('[data-role="chips"]', sheet.el).innerHTML = tagList().map((t) => {
     const n = sel.filter((s) => s.tags.includes(t)).length;
     const cls = n && n === sel.length ? ' on' : n ? ' partial' : '';
-    return `<button type="button" class="chip${cls}" data-btag="${esc(t)}" aria-pressed="${n === sel.length && n > 0}">${esc(t)}</button>`;
+    return `<button type="button" class="chip${cls}"${tagC(t)} data-btag="${esc(t)}" aria-pressed="${n === sel.length && n > 0}">${esc(t)}</button>`;
   }).join('') + `<button type="button" class="chip add" data-act="new">${icon('plus')}新しいタグ</button>`;
 }
 

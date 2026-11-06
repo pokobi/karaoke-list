@@ -214,6 +214,34 @@ export function tagCounts(songs) {
   return m;
 }
 
+// ---- タグの色 ----
+// color はライトテーマで使う色。ダークテーマでは CSS で明るくして使う（css/style.css の [data-c] と合わせる）
+export const TAG_COLORS = [
+  { id: 'red', label: '赤', color: '#dc2626' },
+  { id: 'orange', label: 'オレンジ', color: '#ea580c' },
+  { id: 'amber', label: '黄', color: '#a16207' },
+  { id: 'green', label: '緑', color: '#16a34a' },
+  { id: 'teal', label: '青緑', color: '#0d9488' },
+  { id: 'blue', label: '青', color: '#2563eb' },
+  { id: 'violet', label: '紫', color: '#7c3aed' },
+  { id: 'pink', label: 'ピンク', color: '#db2777' },
+  { id: 'gray', label: 'グレー', color: '#4b5563' },
+];
+
+// タグの色は [{ tag, color }] の形で保存する（Firestore で丸ごと置き換わるよう、配列にしている）
+export function tagColorMap(list) {
+  const m = new Map();
+  if (!Array.isArray(list)) return m;
+  for (const x of list) {
+    if (x && typeof x.tag === 'string' && x.tag.trim() && TAG_COLORS.some((c) => c.id === x.color)) m.set(x.tag, x.color);
+  }
+  return m;
+}
+
+export function tagColorList(map) {
+  return [...map].map(([tag, color]) => ({ tag, color }));
+}
+
 // ---- アカウント共通の表示設定 ----
 export const ACCENTS = [
   { id: 'indigo', label: 'インディゴ', color: '#4f46e5' },
@@ -261,7 +289,7 @@ const randomId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, ''
 
 // 移す中身を決める。アカウントにある曲には手を加えず、同じアーティスト・曲名の曲は追加しない。
 // 曲の ID はそのまま使う（試聴の音楽ファイルが曲の ID で結び付いているため）。アカウントの曲と ID が重なるときだけ新しくする。
-// 音域・タグ・アーティスト名の候補・表示の設定・覚えた略称は、アカウントにないものだけを足す。
+// 音域・タグ（色を含む）・アーティスト名の候補・表示の設定・覚えた略称は、アカウントにないものだけを足す。
 // 戻り値：add（[{ id, from, data }]）、skipped（追加しない曲 [{ from, to }]）、profile（updateProfile に渡す値）、artists（addArtists に渡す値）
 export function planLocalMove(local, account, newId = randomId) {
   const accSongs = (account?.songs ?? []).map(normalizeSong);
@@ -303,6 +331,9 @@ export function planLocalMove(local, account, newId = randomId) {
     if (extra.length) profile.tags = [...base, ...extra];
   }
   if (!obj(ap.prefs) && obj(lp.prefs)) profile.prefs = sanitizePrefs(lp.prefs);
+  const ac = tagColorMap(ap.tagColors);
+  const lc = [...tagColorMap(lp.tagColors)].filter(([t]) => !ac.has(t));
+  if (lc.length) profile.tagColors = tagColorList(new Map([...ac, ...lc]));
   const la = obj(lp.aliases);
   if (la) {
     const aa = obj(ap.aliases) ?? {};

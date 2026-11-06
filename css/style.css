@@ -21,6 +21,8 @@
   --danger: #dc2626;
   --danger-weak: #fdecec;
   --ok: #16a34a;
+  --tag-lift: 0%;
+  --tag-bg: 14%;
   --backdrop: rgba(12, 14, 20, 0.42);
   --shadow-1: 0 1px 2px rgba(16, 18, 24, 0.05), 0 2px 8px rgba(16, 18, 24, 0.05);
   --shadow-2: 0 10px 40px rgba(16, 18, 24, 0.18), 0 2px 8px rgba(16, 18, 24, 0.08);
@@ -53,6 +55,8 @@
     --danger: #f87171;
     --danger-weak: #3a1b1f;
     --ok: #4ade80;
+    --tag-lift: 40%;
+    --tag-bg: 24%;
     --backdrop: rgba(0, 0, 0, 0.6);
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-2: 0 12px 48px rgba(0, 0, 0, 0.55);
@@ -81,6 +85,8 @@
   --danger: #f87171;
   --danger-weak: #3a1b1f;
   --ok: #4ade80;
+  --tag-lift: 40%;
+  --tag-bg: 24%;
   --backdrop: rgba(0, 0, 0, 0.6);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 12px 48px rgba(0, 0, 0, 0.55);
@@ -276,7 +282,7 @@ textarea.input { resize: vertical; min-height: 84px; }
   position: sticky;
   top: 0;
   z-index: 10;
-  padding: calc(8px + env(safe-area-inset-top)) max(var(--gutter), env(safe-area-inset-right)) 6px max(var(--gutter), env(safe-area-inset-left));
+  padding: calc(14px + env(safe-area-inset-top)) max(var(--gutter), env(safe-area-inset-right)) 10px max(var(--gutter), env(safe-area-inset-left));
   background: color-mix(in srgb, var(--bg) 86%, transparent);
   -webkit-backdrop-filter: saturate(1.6) blur(16px);
   backdrop-filter: saturate(1.6) blur(16px);
@@ -308,7 +314,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .tb-btn { width: 42px; height: 42px; }
 .tb-btn .dot { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
 
-.tb-sub { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-height: 32px; }
+.tb-sub { display: flex; align-items: center; gap: 8px; margin-top: 10px; min-height: 32px; }
 .count { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 2px; }
 .count b { color: var(--text); font-weight: 700; font-size: 14px; }
 .count .of { margin-left: 1px; }
@@ -433,6 +439,27 @@ textarea.input { resize: vertical; min-height: 84px; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .tag { flex: none; font-size: 10.5px; font-weight: 600; line-height: 16px; padding: 0 5px; border-radius: 5px; background: var(--accent-weak); color: var(--accent); max-width: 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag.more { background: var(--surface-3); color: var(--text-2); }
+/* タグの色（js/model.js の TAG_COLORS と合わせる） */
+[data-c="red"] { --tc: #dc2626; }
+[data-c="orange"] { --tc: #ea580c; }
+[data-c="amber"] { --tc: #a16207; }
+[data-c="green"] { --tc: #16a34a; }
+[data-c="teal"] { --tc: #0d9488; }
+[data-c="blue"] { --tc: #2563eb; }
+[data-c="violet"] { --tc: #7c3aed; }
+[data-c="pink"] { --tc: #db2777; }
+[data-c="gray"] { --tc: #4b5563; }
+.tag[data-c] { background: color-mix(in srgb, var(--tc) var(--tag-bg), transparent); color: color-mix(in srgb, var(--tc), #fff var(--tag-lift)); }
+.chip[data-c]::before { content: ''; flex: none; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: color-mix(in srgb, var(--tc), #fff var(--tag-lift)); }
+.chip[data-c].on { background: color-mix(in srgb, var(--tc) var(--tag-bg), var(--surface)); border-color: color-mix(in srgb, var(--tc) 45%, transparent); color: color-mix(in srgb, var(--tc), #fff var(--tag-lift)); }
+.chip[data-c].partial { border-color: color-mix(in srgb, var(--tc) 45%, transparent); color: color-mix(in srgb, var(--tc), #fff var(--tag-lift)); }
+.tag-dot { flex: none; width: 36px; height: 36px; margin-left: -8px; display: grid; place-items: center; border-radius: 10px; }
+.tag-dot::before { content: ''; width: 16px; height: 16px; border-radius: 50%; background: color-mix(in srgb, var(--tc, var(--accent)), #fff var(--tag-lift)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tc, var(--accent)) var(--tag-bg), transparent); }
+.tag-dot:active { background: var(--surface-2); }
+.tc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin: 4px 0 6px; }
+.tc-sw { height: 44px; display: grid; place-items: center; padding: 0 6px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.tc-sw[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+.tc-sw .tag { font-size: 12.5px; line-height: 22px; padding: 0 8px; max-width: 100%; }
 @media (hover: hover) {
   .song-main:hover .t { color: var(--accent); }
 }
