@@ -482,7 +482,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .rv.long { font-size: 10.5px; letter-spacing: -.04em; }
 .rv.xlong { font-size: 8.5px; letter-spacing: -.05em; }
 /* 自分の音域を超える音：はみ出しが大きいほど黄色から赤へ */
-.rc.warn { background: color-mix(in srgb, var(--warn) 24%, transparent); box-shadow: inset 3px 0 0 var(--warn); }
+.rc.warn { background: color-mix(in srgb, var(--warn) 10%, transparent); box-shadow: inset 2px 0 0 color-mix(in srgb, var(--warn) 70%, transparent); }
 
 .keyctl {
   flex: none;
