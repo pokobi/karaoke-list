@@ -884,7 +884,10 @@ textarea.input { resize: vertical; min-height: 84px; }
 .d-range td.mine { color: var(--text-3); font-weight: 600; }
 .d-range .none { color: var(--text-3); font-weight: 400; }
 .d-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
-.stat { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 13px; background: var(--surface-2); min-width: 0; }
+.stat { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 13px; background: var(--surface-2); min-width: 0; }
+.stat-reset { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--text-3); }
+.stat-reset .ic { width: 15px; height: 15px; }
+.stat-reset:hover, .stat-reset:active { background: var(--surface-3); color: var(--text-2); }
 .sl { font-size: 11.5px; font-weight: 600; color: var(--text-3); white-space: nowrap; }
 .sv { font-size: 16px; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sv small { font-size: 11.5px; font-weight: 600; color: var(--text-2); margin-left: 2px; }

@@ -948,7 +948,7 @@ function detailHTML(s, d) {
       ${rangeActionsHTML('d-ractions')}
       ${d.preview ? '<section class="d-sec d-pv" data-role="preview"></section>' : ''}
       <div class="d-stats">
-        <div class="stat"><span class="sl">歌った回数</span><span class="sv">${s.singCount}<small>回</small></span></div>
+        <div class="stat"><span class="sl">歌った回数</span><span class="sv">${s.singCount}<small>回</small></span>${s.singCount || s.lastSungAt ? `<button type="button" class="stat-reset" data-act="sung-reset" aria-label="歌った回数をリセット" title="歌った回数をリセット">${icon('reset')}</button>` : ''}</div>
         <div class="stat"><span class="sl">最終歌唱日</span><span class="sv">${s.lastSungAt ? fmtDate(s.lastSungAt) : '—'}</span></div>
         <div class="stat"><span class="sl">採点</span><span class="sv">${s.score != null ? `${fmtScore(s.score)}<small>点</small>` : '—'}</span></div>
       </div>
@@ -1006,6 +1006,7 @@ async function onDetailClick(e) {
       state.store.updateSong(s.id, { favorite: !s.favorite });
       break;
     case 'sung': markSung(s.id); break;
+    case 'sung-reset': resetSung(s.id); break;
     case 'voice': openSettings(); break;
     case 'edit': openForm(s); break;
     case 'delete': removeSong(s.id); break;
@@ -1026,6 +1027,25 @@ function markSung(id) {
   haptic('sung');
   state.store.updateSong(id, next);
   toast(`${next.singCount}回目を記録しました`, {
+    action: '元に戻す',
+    onAction: () => state.store.updateSong(id, prev),
+  });
+}
+
+// 歌った回数を 0 に戻す（最終歌唱日も消す）。あとから元に戻せる
+async function resetSung(id) {
+  const s = state.byId.get(id);
+  if (!s || (!s.singCount && !s.lastSungAt)) return;
+  const ok = await confirmDialog({
+    title: '歌った回数をリセットしますか？',
+    message: `歌った回数（${s.singCount}回）を 0 にして、最終歌唱日も消します。`,
+    ok: 'リセット',
+    danger: true,
+  });
+  if (!ok) return;
+  const prev = { singCount: s.singCount, lastSungAt: s.lastSungAt };
+  state.store.updateSong(id, { singCount: 0, lastSungAt: null });
+  toast('歌った回数をリセットしました', {
     action: '元に戻す',
     onAction: () => state.store.updateSong(id, prev),
   });
@@ -1801,7 +1821,8 @@ function openForm(song = null) {
     }
     let lastSungAt = null;
     const dv = form.lastSungAt.value;
-    if (dv) {
+    // 歌った回数が 0 なら、最終歌唱日も消す
+    if (dv && singCount > 0) {
       if (dv === dateInputValue(draft.lastSungAt)) lastSungAt = draft.lastSungAt;
       else {
         const [y, m, d] = dv.split('-').map(Number);
