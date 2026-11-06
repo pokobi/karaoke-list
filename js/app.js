@@ -653,6 +653,7 @@ function bindStatic() {
   $('#btn-select').addEventListener('click', () => setSelectMode(!state.select.on));
   $('#selbar').addEventListener('click', onSelbarClick);
   setupSwipe($('#list'));
+  setupLongPress($('#list'));
   $('#fab').addEventListener('click', () => openForm());
 
   $('#list').addEventListener('click', (e) => {
@@ -4261,6 +4262,59 @@ function setupSwipe(ul) {
   ul.addEventListener('click', (e) => {
     if (!suppressClick) return;
     suppressClick = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+}
+
+// 一覧の曲を長押し（PC は右クリック）すると、削除するか確かめる。
+// 指が動いたら（スクロール・スワイプ）やめる。選択中・キーのボタンの上では使わない
+const LONG_PRESS_MS = 550;
+function setupLongPress(ul) {
+  let lp = null;
+  let firedAt = 0;
+  const targetRow = (e) => {
+    if (state.select.on || e.target.closest('.keyctl')) return null;
+    const li = e.target.closest('.song');
+    return li && !li.classList.contains('skeleton') ? li : null;
+  };
+  const cancel = () => {
+    if (!lp) return;
+    clearTimeout(lp.timer);
+    lp.li.classList.remove('pressing');
+    lp = null;
+  };
+  const fire = () => {
+    const { id } = lp;
+    cancel();
+    firedAt = Date.now();
+    haptic('swipe');
+    removeSong(id);
+  };
+  ul.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    const li = targetRow(e);
+    if (!li) return;
+    cancel();
+    lp = { li, id: li.dataset.id, x0: e.clientX, y0: e.clientY, pid: e.pointerId, timer: setTimeout(fire, LONG_PRESS_MS) };
+    li.classList.add('pressing');
+  });
+  ul.addEventListener('pointermove', (e) => {
+    if (lp && e.pointerId === lp.pid && Math.hypot(e.clientX - lp.x0, e.clientY - lp.y0) > 10) cancel();
+  });
+  ul.addEventListener('pointerup', cancel);
+  ul.addEventListener('pointercancel', cancel);
+  // スマホのブラウザが長押しで出すメニューは出さない。PC の右クリックは、ここで削除を確かめる
+  ul.addEventListener('contextmenu', (e) => {
+    const li = targetRow(e);
+    if (!li) return;
+    e.preventDefault();
+    if (lp) fire();
+    else if (Date.now() - firedAt > 800) removeSong(li.dataset.id);
+  });
+  // 長押しのあとに続く「クリック」で、詳細画面が開かないようにする
+  ul.addEventListener('click', (e) => {
+    if (Date.now() - firedAt > 800) return;
     e.stopPropagation();
     e.preventDefault();
   }, true);

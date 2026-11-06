@@ -384,6 +384,8 @@ textarea.input { resize: vertical; min-height: 84px; }
   transition: transform .22s cubic-bezier(.2, .85, .25, 1), background-color .15s;
 }
 .song.swiping .song-inner { transition: none; }
+/* 長押ししている間は、少しずつ色を変えて、押していることを知らせる */
+.song.pressing .song-inner { background-color: var(--surface-2); transition: transform .22s cubic-bezier(.2, .85, .25, 1), background-color .5s; }
 .swipe-bg {
   position: absolute;
   inset: 0;
