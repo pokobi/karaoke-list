@@ -900,8 +900,11 @@ function paintDetail() {
   }
   const root = $('.detail', d.sheet.el);
   const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, voice(), state.profile.tags, getNoteStyle(), recOffset()]);
+  let restore = null;
   if (sig !== d.sig) {
     d.sig = sig;
+    // 描き直しても、スクロール位置と押したボタンはそのまま保つ（最後に戻す）
+    restore = keepViewState(root);
     root.innerHTML = detailHTML(s, d);
   }
   const kd = paintKv($('[data-role="kv"]', root), s.key, s.octave);
@@ -926,6 +929,26 @@ function paintDetail() {
   }
   $('[data-role="rec"]', root).innerHTML = recommendHTML(s);
   d.preview?.paint($('[data-role="preview"]', root));
+  restore?.();
+}
+
+// 中身を描き直す前に呼ぶ。スクロールしている部分の位置と、フォーカスのあったボタンを覚え、
+// 戻り値の関数で、描き直したあとの同じ場所に戻す
+const FOCUS_KEYS = ['data-act', 'data-dtag', 'data-tag', 'data-plugin', 'data-opt', 'data-field'];
+function keepViewState(root) {
+  const scrolls = $$('.sheet-body', root).map((el) => el.scrollTop);
+  const a = document.activeElement;
+  let focus = null;
+  if (a && a !== root && root.contains(a)) {
+    const name = FOCUS_KEYS.find((k) => a.hasAttribute(k));
+    if (name) focus = `[${name}="${CSS.escape(a.getAttribute(name))}"]`;
+  }
+  return () => {
+    $$('.sheet-body', root).forEach((el, i) => {
+      if (scrolls[i]) el.scrollTop = scrolls[i];
+    });
+    if (focus) $(focus, root)?.focus({ preventScroll: true });
+  };
 }
 
 function detailHTML(s, d) {
