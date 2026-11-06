@@ -11,6 +11,7 @@ import {
 } from './model.js';
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
+import { openExternal, installExternalLinks } from './external.js';
 import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, findTrack, waitForSlot, searchSongs, trimReading } from './itunes.js';
 import {
   MAX_LINES, parseLines, analyzeLine, aliasMap, sanitizeAliases, scoreSongs, mergeCandidates, judge, fallbackTerms,
@@ -149,6 +150,7 @@ function paintKv(el, key, octave) {
 
 // ---- 起動 -------------------------------------------------------------
 
+installExternalLinks();
 boot();
 
 async function boot() {
@@ -1572,7 +1574,7 @@ function openRangeSearch(artist, title) {
     return;
   }
   const q = [String(artist ?? '').trim(), t, '音域'].filter(Boolean).join(' ');
-  window.open(WEB_SEARCH_URL + encodeURIComponent(q), '_blank', 'noopener');
+  openExternal(WEB_SEARCH_URL + encodeURIComponent(q));
 }
 
 // 追加機能が、まとめて追加した曲などの音域を補う（rangeBatch）。items：[{ id, artist, title }]
