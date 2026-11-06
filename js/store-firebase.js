@@ -89,7 +89,7 @@ export async function createFirebaseStore(config) {
     putSongs(entries, deleteIds = []) {
       const ops = [
         ...deleteIds.map((id) => (b) => b.delete(songDoc(id))),
-        ...entries.map(({ id, data }) => (b) => b.set(id ? songDoc(id) : F.doc(songsCol()), data)),
+        ...entries.map(({ id, data }) => (b) => (id ? b.set(songDoc(id), data, { merge: true }) : b.set(F.doc(songsCol()), data))),
       ];
       for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
         const batch = F.writeBatch(db);

@@ -76,7 +76,7 @@ export function createLocalStore() {
       data.songs = data.songs.filter((x) => !del.has(x.id));
       for (const { id, data: payload } of entries) {
         const i = id ? data.songs.findIndex((x) => x.id === id) : -1;
-        if (i >= 0) data.songs[i] = { ...payload, id };
+        if (i >= 0) data.songs[i] = { ...data.songs[i], ...payload, id };
         else data.songs.push({ ...payload, id: id ?? uid() });
       }
       commit();

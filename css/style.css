@@ -875,6 +875,9 @@ textarea.input { resize: vertical; min-height: 84px; }
 }
 .art-edit + .hint { margin-top: 6px; }
 
+/* 追加機能のボタン */
+.range-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
 /* 候補リストの見出し・曲の候補 */
 .ac-list li.ac-head { min-height: 0; padding: 8px 10px 4px; font-size: 11.5px; font-weight: 700; color: var(--text-3); background: none; cursor: default; }
 .ac-list li.song-opt { min-height: 52px; gap: 10px; justify-content: flex-start; }

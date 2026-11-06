@@ -26,13 +26,18 @@ export function safeImageUrl(v) {
   return /^https:\/\/[^\s"'<>]+$/i.test(s) && s.length <= 1000 ? s : null;
 }
 
+// 追加機能が自由に使う保存欄。この画面では中身を表示も変更もしない
+export function plainObject(v) {
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+}
+
 export const isRangeMissing = (song) => !isNote(song.low) || !isNote(song.chestHigh);
 
 export function emptySong() {
   return {
     artist: '', title: '', low: null, chestHigh: null, falsettoHigh: null, key: 0,
     favorite: false, tags: [], score: null, memo: '', singCount: 0, lastSungAt: null,
-    artwork: null, createdAt: 0, updatedAt: 0,
+    artwork: null, ext: null, createdAt: 0, updatedAt: 0,
   };
 }
 
@@ -52,6 +57,7 @@ export function normalizeSong(raw) {
     singCount: Number.isInteger(raw.singCount) && raw.singCount > 0 ? raw.singCount : 0,
     lastSungAt: num(raw.lastSungAt),
     artwork: safeImageUrl(raw.artwork),
+    ext: plainObject(raw.ext),
     createdAt: num(raw.createdAt) ?? 0,
     updatedAt: num(raw.updatedAt) ?? 0,
   };

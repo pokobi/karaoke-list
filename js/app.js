@@ -10,6 +10,7 @@ import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, 
 import { readHistoryFile, aggregate, thumbnailUrl } from './history.js';
 import { $, $$, h, esc, icon, openSheet, choiceDialog, confirmDialog, toast, openPopover, closePopover, popoverAnchor, pickNote } from './ui.js';
 import { createLocalStore } from './store-local.js';
+import { plugins } from './plugins.js';
 
 const VIEW_KEY = 'karaoke-list:view:v1';
 const HOLD_MS = 1400;
@@ -683,7 +684,7 @@ function paintDetail() {
     return;
   }
   const root = $('.detail', d.sheet.el);
-  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, d.random, voice()]);
+  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, d.random, voice()]);
   if (sig !== d.sig) {
     d.sig = sig;
     root.innerHTML = detailHTML(s, d);
@@ -747,6 +748,7 @@ function detailHTML(s, d) {
         <thead><tr><th></th><th scope="col">原曲</th><th scope="col">キー適用後</th>${showVoice ? '<th scope="col">自分</th>' : ''}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
+      ${pluginDetailHTML(s)}
       <div class="d-stats">
         <div class="stat"><span class="sl">歌った回数</span><span class="sv">${s.singCount}<small>回</small></span></div>
         <div class="stat"><span class="sl">最終歌唱日</span><span class="sv">${s.lastSungAt ? fmtDate(s.lastSungAt) : '—'}</span></div>
@@ -875,6 +877,7 @@ function formHTML(isNew, openMore) {
           ${RANGE_FIELDS.map((f) => `<button type="button" class="note-field" data-field="${f.id}"><span class="nf-l">${f.label}</span><span class="nf-v"></span></button>`).join('')}
         </div>
         <p class="field-warn" data-role="range-warn" hidden></p>
+        ${rangeActionsHTML()}
       </div>
       <div class="field">
         <span class="label">キー</span>
@@ -917,6 +920,27 @@ function formHTML(isNew, openMore) {
   </form>`;
 }
 
+// 追加機能が用意した、音域欄のボタン
+const rangeActions = () => plugins.flatMap((p) => (p.rangeAction ? [p.rangeAction] : []));
+
+function rangeActionsHTML() {
+  const actions = rangeActions();
+  if (!actions.length) return '';
+  return `<div class="range-actions">${actions.map((a, i) => `<button type="button" class="pill" data-plugin="${i}">${icon(a.icon ?? 'search')}${esc(a.label)}</button>`).join('')}</div>`;
+}
+
+// 追加機能が詳細画面に足す表示
+function pluginDetailHTML(song) {
+  return plugins.map((p) => {
+    try {
+      return p.detailHTML?.(song) ?? '';
+    } catch (e) {
+      console.error(e);
+      return '';
+    }
+  }).join('');
+}
+
 const dateInputValue = (ms) => {
   if (!ms) return '';
   const d = new Date(ms);
@@ -948,6 +972,18 @@ function openForm(song = null) {
     paintKey();
     paintTags();
     paintArt();
+  };
+
+  // 追加機能に渡す、フォームを操作するための窓口
+  const pluginCtx = {
+    get artist() { return form.artist.value.trim(); },
+    get title() { return form.title.value.trim(); },
+    current: () => ({ low: draft.low, chestHigh: draft.chestHigh, falsettoHigh: draft.falsettoHigh }),
+    applyRange: (range, extPatch) => {
+      for (const f of RANGE_FIELDS) if (range[f.id] !== undefined) draft[f.id] = range[f.id];
+      if (extPatch) draft.ext = { ...(draft.ext ?? {}), ...extPatch };
+      paintRange();
+    },
   };
 
   const paintArt = () => {
@@ -1056,6 +1092,16 @@ function openForm(song = null) {
       const t = b.dataset.tag;
       draft.tags = draft.tags.includes(t) ? draft.tags.filter((x) => x !== t) : [...draft.tags, t];
       paintTags();
+      return;
+    }
+    if (b.dataset.plugin != null) {
+      const action = rangeActions()[+b.dataset.plugin];
+      try {
+        await action?.run(pluginCtx);
+      } catch (err) {
+        console.error(err);
+        toast('うまく動きませんでした');
+      }
       return;
     }
     if (b.dataset.field) {
