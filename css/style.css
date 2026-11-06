@@ -1176,8 +1176,8 @@ textarea.input { resize: vertical; min-height: 84px; }
 
 /* 追加機能のボタン */
 .range-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
-/* 音域を調べる（追加機能）：アクセントカラーとは別の緑で目立たせる（アクセントが緑なら青緑）。
-   音域が未入力なら、枠を太く・背景を濃くして、さらに目立たせる（塗りつぶしはしない） */
+/* 音域を調べる（追加機能）：音域が未入力のときだけ、アクセントカラーとは別の緑（アクセントが緑なら青緑）の
+   太い枠と背景で目立たせる（塗りつぶしはしない）。音域が入っているときは普通のボタン */
 :root { --lookup: #15803d; }
 :root[data-accent="green"] { --lookup: #0f766e; }
 @media (prefers-color-scheme: dark) {
@@ -1186,9 +1186,8 @@ textarea.input { resize: vertical; min-height: 84px; }
 }
 :root[data-theme="dark"] { --lookup: #4ade80; }
 :root[data-theme="dark"][data-accent="green"] { --lookup: #2dd4bf; }
-.pill.pill-lookup { color: var(--lookup); background: color-mix(in srgb, var(--lookup) 7%, var(--surface)); border-color: color-mix(in srgb, var(--lookup) 35%, transparent); }
-.pill.pill-lookup.urgent { font-weight: 750; background: color-mix(in srgb, var(--lookup) 15%, var(--surface)); border: 1.5px solid var(--lookup); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lookup) 13%, transparent); }
-.pill.pill-lookup:active { background: color-mix(in srgb, var(--lookup) 24%, var(--surface)); }
+.pill.pill-lookup.urgent { color: var(--lookup); font-weight: 750; background: color-mix(in srgb, var(--lookup) 15%, var(--surface)); border: 1.5px solid var(--lookup); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lookup) 13%, transparent); }
+.pill.pill-lookup.urgent:active { background: color-mix(in srgb, var(--lookup) 24%, var(--surface)); }
 /* Web で音域を検索：最後の手段なので控えめに */
 .range-web { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px; font-size: 12.5px; font-weight: 600; color: var(--text-3); }
 .range-web .ic { width: 14px; height: 14px; }
