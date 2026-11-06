@@ -208,6 +208,12 @@ export function allTags(songs, ordered = null) {
   return [...base, ...[...rest].sort(collator.compare)];
 }
 
+// 曲のタグを、タグの管理の並び（order：タグ名 → 何番目か）の順に並べる。並びにないタグは後ろに、元の順のまま
+export function orderTags(tags, order) {
+  const at = (t) => order.get(t) ?? Number.MAX_SAFE_INTEGER;
+  return [...tags].sort((a, b) => at(a) - at(b));
+}
+
 export function tagCounts(songs) {
   const m = new Map();
   for (const s of songs) for (const t of s.tags) m.set(t, (m.get(t) ?? 0) + 1);

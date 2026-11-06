@@ -7,7 +7,7 @@ import { collator, normalize } from './text.js';
 import {
   SORTS, emptySong, normalizeSong, toPayload, dupKey, sanitizeView, defaultView, applyView, hasRangeFilter,
   artistCounts, allTags, suggestArtists, tagCounts, ACCENTS, NOTE_STYLES, REC_OFFSETS, sanitizePrefs, planLocalMove,
-  TAG_COLORS, tagColorMap, tagColorList, newSongId, isRangeMissing,
+  TAG_COLORS, tagColorMap, tagColorList, newSongId, isRangeMissing, orderTags,
 } from './model.js';
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
@@ -431,9 +431,11 @@ function createItem(id) {
   };
 }
 
-function updateItem(it, s) {
+// tagOrder：タグ名 → タグの管理での順番。曲のタグは、この順に左から並べる
+function updateItem(it, s, tagOrder) {
   const vo = voice();
-  const sig = [s.title, s.artist, s.favorite, s.singCount, s.tags.map((t) => `${t}:${state.profile.tagColors.get(t) ?? ''}`).join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork, vo.low, vo.chestHigh, vo.falsettoHigh].join('\u0001');
+  const tags = orderTags(s.tags, tagOrder);
+  const sig = [s.title, s.artist, s.favorite, s.singCount, tags.map((t) => `${t}:${state.profile.tagColors.get(t) ?? ''}`).join('|'), s.low, s.chestHigh, s.falsettoHigh, s.key, s.octave, s.artwork, vo.low, vo.chestHigh, vo.falsettoHigh].join('\u0001');
   if (sig === it.sig) return;
   it.sig = sig;
   if (s.artwork) {
@@ -452,8 +454,8 @@ function updateItem(it, s) {
   it.cn.textContent = s.singCount ? String(s.singCount) : '';
   it.fav.style.display = s.favorite ? '' : 'none';
   it.swR.textContent = s.favorite ? '解除' : 'お気に入り';
-  const shown = s.tags.slice(0, 2);
-  it.tags.innerHTML = shown.map((t) => `<span class="tag"${tagC(t)}>${esc(t)}</span>`).join('') + (s.tags.length > 2 ? `<span class="tag more">+${s.tags.length - 2}</span>` : '');
+  const shown = tags.slice(0, 2);
+  it.tags.innerHTML = shown.map((t) => `<span class="tag"${tagC(t)}>${esc(t)}</span>`).join('') + (tags.length > 2 ? `<span class="tag more">+${tags.length - 2}</span>` : '');
   // 今のキーで自分の音域を超える音は、行に色を付ける（詳細画面の注意の印と同じ色）
   const issues = hasVoice() ? rangeIssues(s, vo, s.key) : [];
   RANGE_FIELDS.forEach((f, i) => {
@@ -487,6 +489,7 @@ function renderList(list) {
   const seen = new Set();
   let prev = null;
   let index = 0;
+  const tagOrder = new Map(tagList().map((t, i) => [t, i]));
   for (const s of list) {
     let it = items.get(s.id);
     if (!it) {
@@ -496,7 +499,7 @@ function renderList(list) {
     // 最初に見える範囲の画像はすぐ読み込み、それより下は画面に近づいてから読み込む
     const loading = index++ < 16 ? 'eager' : 'lazy';
     if (it.art.loading !== loading) it.art.loading = loading;
-    updateItem(it, s);
+    updateItem(it, s, tagOrder);
     it.el.classList.toggle('selected', state.select.on && state.select.ids.has(s.id));
     seen.add(s.id);
     const expected = prev ? prev.nextSibling : ul.firstChild;
@@ -2683,7 +2686,9 @@ function openTextImport() {
     const left = job.rows.filter(busy).length;
     const min = Math.ceil(left / TI_PER_MINUTE);
     if (job.running) {
-      el.innerHTML = `<span>調べています（${total - left} / ${total}）${min >= 2 ? `・残り約${min}分` : ''}</span><button type="button" class="link-btn" data-act="stop">中止</button>`;
+      const pct = total ? Math.round(((total - left) / total) * 100) : 0;
+      el.innerHTML = `<span>調べています（${total - left} / ${total}）${min >= 2 ? `・残り約${min}分` : ''}</span><button type="button" class="link-btn" data-act="stop">中止</button>
+        <div class="job-bar" role="progressbar" aria-label="調べた行" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${total - left}"><span style="width:${pct}%"></span></div>`;
     } else if (left) {
       el.innerHTML = `<span>${left}行はまだ調べていません</span><button type="button" class="link-btn" data-act="resume">続きを調べる</button>`;
     } else {

@@ -1210,6 +1210,8 @@ textarea.input { resize: vertical; min-height: 84px; }
 .ti-text { min-height: 220px; font-size: 15px; line-height: 1.6; }
 .ti-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; font-size: 13.5px; line-height: 1.5; color: var(--text-2); margin-bottom: 6px; }
 .ti-status .link-btn { flex: none; }
+.ti-status { flex-wrap: wrap; row-gap: 6px; }
+.ti-status .job-bar { flex: 1 0 100%; }
 .ti-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .ti-filter:empty { display: none; }
 .ti-row { display: flex; align-items: center; gap: 10px; min-height: 64px; border-bottom: 1px solid var(--line); }

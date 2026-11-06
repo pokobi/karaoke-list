@@ -72,3 +72,10 @@ test('保存用データと重複判定', () => {
   assert.equal(dupKey({ artist: 'ｿﾗｼﾄﾞ', title: '夜明けのワルツ ' }), dupKey(songs[0]));
   assert.deepEqual(allTags(songs), ['練習中', 'バラード']);
 });
+
+test('曲のタグを、タグの管理の並びの順に並べる（並びにないタグは後ろ）', async () => {
+  const { orderTags } = await import('../js/model.js');
+  const order = new Map(['練習中', 'A', 'B', 'C'].map((t, i) => [t, i]));
+  assert.deepEqual(orderTags(['C', '練習中', 'その他', 'A'], order), ['練習中', 'A', 'C', 'その他']);
+  assert.deepEqual(orderTags(['x', 'y'], order), ['x', 'y']);
+});
