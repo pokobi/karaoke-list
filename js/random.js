@@ -46,10 +46,10 @@ export function hasVoiceRange(voice) {
 
 // 自分の音域で歌えるか（今のキー、またはおすすめキーで、自分の音域を超える音がないか）。
 // 音域が入力されていない曲は判断できないので、歌えない扱いにする
-export function fitsVoice(song, voice, mode, offset = 2) {
+export function fitsVoice(song, voice, mode, offset = 2, allowUp = true) {
   if (!hasVoiceRange(voice)) return false;
   if (!isNote(song.low) && !isNote(song.chestHigh) && !isNote(song.falsettoHigh)) return false;
-  if (mode === 'recommend') return recommendKey(song, voice, { offset })?.fits === true;
+  if (mode === 'recommend') return recommendKey(song, voice, { offset, allowUp })?.fits === true;
   return rangeIssues(song, voice, song.key ?? 0).length === 0;
 }
 
@@ -77,13 +77,13 @@ export function hasRandomRange(o) {
 }
 
 // 条件に合う曲
-export function randomPool(songs, o, { voice, now = Date.now(), offset = 2 } = {}) {
+export function randomPool(songs, o, { voice, now = Date.now(), offset = 2, allowUp = true } = {}) {
   return songs.filter((s) => {
     if (o.favoriteOnly && !s.favorite) return false;
     if (o.artists.length && !o.artists.includes(s.artist)) return false;
     if (o.tags.length && !o.tags.some((t) => s.tags.includes(t))) return false;
     if (o.excludeDays && s.lastSungAt && now - s.lastSungAt < o.excludeDays * DAY) return false;
-    if (o.fitsVoice && !fitsVoice(s, voice, o.fitsMode, offset)) return false;
+    if (o.fitsVoice && !fitsVoice(s, voice, o.fitsMode, offset, allowUp)) return false;
     if (!inRange(s, o.range)) return false;
     return true;
   });

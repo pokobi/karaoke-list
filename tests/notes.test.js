@@ -42,6 +42,19 @@ test('キーの表記と色', () => {
   assert.equal(clampKey(-99), -24);
 });
 
+test('上げるおすすめを出さない設定では、原曲より高くするおすすめは原キーにする', () => {
+  const n = parseNote;
+  const voice = { low: n('lowG'), chestHigh: n('mid2G'), falsettoHigh: n('hiC') };
+  // 本来は +5 → 原キー。そのキーで超える音は原キーで調べ直す
+  const r = recommendKey({ low: n('lowE'), chestHigh: n('mid2C'), falsettoHigh: null }, voice, { allowUp: false });
+  assert.equal(r.key, 0);
+  assert.deepEqual(r.issues, [{ field: 'low', by: 3 }]);
+  // 下げるおすすめ（オク下で歌うものも含む）は、そのまま
+  assert.equal(recommendKey({ low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: null }, voice, { allowUp: false }).key, -4);
+  const male = { low: n('lowF'), chestHigh: n('mid2F'), falsettoHigh: n('hiA') };
+  assert.equal(recommendKey({ low: n('mid1F'), chestHigh: n('hiD'), falsettoHigh: n('hiF') }, male, { allowUp: false }).key, -11);
+});
+
 test('おすすめキーは、曲の地声最高音を自分の地声最高音の2半音下に合わせる', () => {
   const n = parseNote;
   const voice = { low: n('lowG'), chestHigh: n('mid2G'), falsettoHigh: n('hiC') };

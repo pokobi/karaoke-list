@@ -144,8 +144,10 @@ export function rangeIssues(song, voice, key = 0) {
 // おすすめキー：曲の地声最高音が「自分の地声最高音 − offset 半音」になるキー。
 // 地声最高音が分からないときは裏声最高音どうし（自分の裏声最高音がなければ地声最高音）で同じように合わせ、
 // それも分からないときは、最低音が出るキーのうち原曲に近いもの。計算に使える音がなければ null。
+// allowUp が false のときは、原曲より高くするキーはすすめず、原キー（0）にする
+// （実際の高さで判断する。「オク下 +5」は実際には下げて歌うので、そのまますすめる）。
 // 戻り値：{ key, basis（合わせた音）, issues（そのキーで自分の音域を超える音）, fits（超える音がない） }
-export function recommendKey(song, voice, { offset = 2 } = {}) {
+export function recommendKey(song, voice, { offset = 2, allowUp = true } = {}) {
   if (!song || !voice) return null;
   let key = null;
   let basis = null;
@@ -162,6 +164,7 @@ export function recommendKey(song, voice, { offset = 2 } = {}) {
   }
   if (key === null) return null;
   key = clampKey(key);
+  if (!allowUp && key > 0) key = 0;
   const issues = rangeIssues(song, voice, key);
   return { key, basis, issues, fits: issues.length === 0 };
 }

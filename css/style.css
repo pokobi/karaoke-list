@@ -666,6 +666,8 @@ textarea.input { resize: vertical; min-height: 84px; }
   z-index: 90;
   min-width: 200px;
   max-width: calc(100vw - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;

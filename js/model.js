@@ -272,6 +272,8 @@ export function sanitizePrefs(p) {
     accent: ACCENTS.some((a) => a.id === o.accent) ? o.accent : 'indigo',
     noteStyle: NOTE_STYLES.some((s) => s.id === o.noteStyle) ? o.noteStyle : 'karaoke',
     recOffset: REC_OFFSETS.includes(o.recOffset) ? o.recOffset : DEFAULT_REC_OFFSET,
+    // 原曲より高くするおすすめキーも出すか（オフのときは、原キーをすすめる）
+    recUp: o.recUp !== false,
   };
 }
 

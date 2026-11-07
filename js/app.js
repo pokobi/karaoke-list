@@ -119,7 +119,8 @@ function saveView() {
 const voice = () => state.profile.range ?? {};
 const hasVoice = () => RANGE_FIELDS.some((f) => isNote(voice()[f.id]));
 const recOffset = () => state.profile.prefs?.recOffset ?? 2;
-const recommend = (s) => recommendKey(s, voice(), { offset: recOffset() });
+const recUp = () => state.profile.prefs?.recUp !== false;
+const recommend = (s) => recommendKey(s, voice(), { offset: recOffset(), allowUp: recUp() });
 
 // 自分の音域を超える音の説明（例：「裏声最高音が1半音高い」）
 const ISSUE_LABEL = { low: ['最低音', '低い'], chestHigh: ['地声最高音', '高い'], falsettoHigh: ['裏声最高音', '高い'] };
@@ -845,6 +846,8 @@ function openKeyMenu(id, anchor) {
   });
   state.keyPop = { id, el: p.el };
   paintKeyMenu();
+  // 中身を入れてから置き直す（画面の下のほうの行では、上に出す）
+  p.place();
   p.el.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b || !state.keyPop) return;
@@ -915,7 +918,7 @@ function paintDetail() {
     return;
   }
   const root = $('.detail', d.sheet.el);
-  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, voice(), state.profile.tags, getNoteStyle(), recOffset()]);
+  const sig = JSON.stringify([d.id, s.title, s.artist, s.favorite, s.tags, s.memo, s.score, s.singCount, s.lastSungAt, s.low, s.chestHigh, s.falsettoHigh, s.artwork, s.ext, voice(), state.profile.tags, getNoteStyle(), recOffset(), recUp()]);
   let restore = null;
   if (sig !== d.sig) {
     d.sig = sig;
@@ -1156,7 +1159,7 @@ function saveRandomOptions() {
   } catch { /* 保存できなくても動作は続ける */ }
 }
 
-const randomPoolNow = () => randomPool(state.songs, state.random.opts, { voice: voice(), offset: recOffset() });
+const randomPoolNow = () => randomPool(state.songs, state.random.opts, { voice: voice(), offset: recOffset(), allowUp: recUp() });
 
 function hasRandomCondition() {
   const o = state.random.opts;
@@ -3563,6 +3566,7 @@ function openSettings() {
       paintSettings();
     }
     if (e.target.dataset.role === 'swipe') setDevicePref({ swipe: e.target.checked });
+    if (e.target.dataset.role === 'rec-up') updateAccountPrefs({ recUp: e.target.checked });
     if (e.target.dataset.role === 'hap-on') setHaptics({ on: e.target.checked });
     if (e.target.dataset.hap) setHaptics({ [e.target.dataset.hap]: e.target.checked });
   });
@@ -3629,6 +3633,8 @@ function paintSettings() {
         <span class="set-label">おすすめキーの余裕</span>
         ${seg('offset', REC_OFFSETS.map((m) => [m, m ? `−${m}半音` : 'ちょうど']), p.recOffset)}
         <p class="hint">おすすめキーは、曲の地声最高音が、自分の地声最高音よりこの分だけ低くなるキーです。そのキーでも最低音や裏声最高音が自分の音域を超えるときは、注意を表示します。</p>
+        <label class="switch-row"><span>キーを上げるおすすめも出す</span><input type="checkbox" class="switch" data-role="rec-up"${p.recUp !== false ? ' checked' : ''}></label>
+        <p class="hint">オフにすると、原曲より高く歌うおすすめキーは出さず、代わりに原キーをすすめます。オク下で歌うおすすめ（オク下 +5 など）は、オフでも出します。</p>
       </section>
       <section class="set-sec">
         <h4>タグと入力補助</h4>

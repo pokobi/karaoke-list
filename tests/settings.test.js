@@ -46,9 +46,9 @@ test('タグの一覧は、設定で並べた順を先に、曲にだけ付い�
 });
 
 test('アカウント共通の表示設定を、壊れていても安全に読み込む', () => {
-  assert.deepEqual(sanitizePrefs(undefined), { accent: 'indigo', noteStyle: 'karaoke', recOffset: 2 });
-  assert.deepEqual(sanitizePrefs({ accent: 'teal', noteStyle: 'both', recOffset: 3 }), { accent: 'teal', noteStyle: 'both', recOffset: 3 });
-  assert.deepEqual(sanitizePrefs({ accent: 'black', noteStyle: 'x', recOffset: 9 }), { accent: 'indigo', noteStyle: 'karaoke', recOffset: 2 });
+  assert.deepEqual(sanitizePrefs(undefined), { accent: 'indigo', noteStyle: 'karaoke', recOffset: 2, recUp: true });
+  assert.deepEqual(sanitizePrefs({ accent: 'teal', noteStyle: 'both', recOffset: 3, recUp: false }), { accent: 'teal', noteStyle: 'both', recOffset: 3, recUp: false });
+  assert.deepEqual(sanitizePrefs({ accent: 'black', noteStyle: 'x', recOffset: 9 }), { accent: 'indigo', noteStyle: 'karaoke', recOffset: 2, recUp: true });
   // 以前の「余裕」（意味が違う）は引き継がない
   assert.equal(sanitizePrefs({ recMargin: 0 }).recOffset, 2);
 });

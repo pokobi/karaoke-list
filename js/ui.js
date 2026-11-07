@@ -230,17 +230,7 @@ export function openPopover(anchor, content, { className = '', onClose } = {}) {
   if (typeof content === 'string') el.innerHTML = content;
   else el.append(content);
   document.body.append(el);
-  const r = anchor.getBoundingClientRect();
-  const w = el.offsetWidth;
-  const ht = el.offsetHeight;
-  const vw = document.documentElement.clientWidth;
-  const vh = window.innerHeight;
-  let left = Math.min(Math.max(8, r.right - w), vw - w - 8);
-  let top = r.bottom + 6;
-  if (top + ht > vh - 8) top = Math.max(8, r.top - ht - 6);
-  el.style.left = `${left}px`;
-  el.style.top = `${top}px`;
-  el.style.transformOrigin = `${Math.round(r.left + r.width / 2 - left)}px ${top > r.top ? 0 : ht}px`;
+  placePopover(el, anchor);
   void el.offsetHeight;
   el.classList.add('open');
   const onDown = (e) => {
@@ -254,7 +244,33 @@ export function openPopover(anchor, content, { className = '', onClose } = {}) {
   window.addEventListener('scroll', onScroll, true);
   window.addEventListener('resize', onScroll);
   popover = { el, anchor, onDown, onScroll, onClose };
-  return { el, close: closePopover };
+  // 中身をあとから入れたときは place() で置き直す（高さが変わって画面の外にはみ出さないように）
+  return { el, close: closePopover, place: () => placePopover(el, anchor) };
+}
+
+// ボタンの下に置く。下に入りきらないときは上に置き（下端をボタンの上にそろえ、中身が増えても上に伸びる）、
+// どちらにも入りきらないときは広いほうに置いて、中をスクロールできるようにする
+function placePopover(el, anchor) {
+  el.style.maxHeight = '';
+  const r = anchor.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const ht = el.offsetHeight;
+  const vw = document.documentElement.clientWidth;
+  const vh = window.innerHeight;
+  const left = Math.min(Math.max(8, r.right - w), vw - w - 8);
+  const below = vh - 8 - (r.bottom + 6);
+  const above = r.top - 6 - 8;
+  const down = ht <= below || (ht > above && below >= above);
+  el.style.left = `${left}px`;
+  if (down) {
+    el.style.top = `${r.bottom + 6}px`;
+    el.style.bottom = '';
+  } else {
+    el.style.top = '';
+    el.style.bottom = `${vh - (r.top - 6)}px`;
+  }
+  if (ht > (down ? below : above)) el.style.maxHeight = `${Math.max(120, down ? below : above)}px`;
+  el.style.transformOrigin = `${Math.round(r.left + r.width / 2 - left)}px ${down ? '0' : '100%'}`;
 }
 
 export function popoverAnchor() {
