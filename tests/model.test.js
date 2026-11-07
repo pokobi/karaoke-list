@@ -92,3 +92,12 @@ test('曲のタグを、タグの管理の並びの順に並べる（並びに�
   assert.deepEqual(orderTags(['C', '練習中', 'その他', 'A'], order), ['練習中', 'A', 'C', 'その他']);
   assert.deepEqual(orderTags(['x', 'y'], order), ['x', 'y']);
 });
+
+test('難易度（音域の広さ）で並び替えられる。音域が分からない曲は最後', () => {
+  // a：mid1C〜hiC（24 半音）、b：mid1A〜hiB（26）、c：lowG〜hiD（31）、d：音域なし
+  const asc = applyView(songs, view({ sortBy: 'span', sortDir: 'asc' }), '').map((s) => s.id);
+  assert.deepEqual(asc, ['a', 'b', 'c', 'd']);
+  const desc = applyView(songs, view({ sortBy: 'span', sortDir: 'desc' }), '').map((s) => s.id);
+  assert.deepEqual(desc, ['c', 'b', 'a', 'd']);
+  assert.equal(sanitizeView({ sortBy: 'span' }).sortBy, 'span');
+});

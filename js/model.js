@@ -1,5 +1,5 @@
 // 曲データの正規化と、絞り込み・並び替え。
-import { RANGE_FIELDS, isNote, octaveOf } from './notes.js';
+import { RANGE_FIELDS, isNote, octaveOf, songSpan } from './notes.js';
 import { normalize, searchTerms, collator } from './text.js';
 
 export const PRESET_TAGS = ['練習中'];
@@ -11,6 +11,7 @@ export const SORTS = [
   { id: 'low', label: '最低音', dir: 'asc' },
   { id: 'chestHigh', label: '地声最高音', dir: 'asc' },
   { id: 'falsettoHigh', label: '裏声最高音', dir: 'asc' },
+  { id: 'span', label: '難易度', dir: 'asc' }, // 音域の広さ（難易度のもと）の順
   { id: 'singCount', label: '歌った回数', dir: 'desc' },
   { id: 'lastSungAt', label: '最終歌唱日', dir: 'desc' },
   { id: 'score', label: '採点', dir: 'desc' },
@@ -163,6 +164,8 @@ function sortValue(song, by, basis) {
     case 'chestHigh':
     case 'falsettoHigh':
       return rangeValue(song, by, basis);
+    case 'span':
+      return songSpan(song);
     case 'singCount':
       return song.singCount || null;
     default:

@@ -1046,6 +1046,11 @@ function rangeSpanHTML(s) {
 }
 
 function detailHTML(s, d) {
+  // 音域の出典と「音域を調べる」：音域が未入力のときは表のすぐ下に出す。入力済みのときは、
+  // スマホで試聴の再生ボタンまで 1 画面に入るよう、試聴の下に回す
+  const missing = isRangeMissing(s);
+  const rangeInfo = `${pluginDetailHTML(s)}${rangeActionsHTML('d-ractions', missing)}`;
+  const rangeInfoFirst = missing || !d.preview;
   const vo = voice();
   const showVoice = hasVoice();
   const rows = RANGE_FIELDS.map((f) => {
@@ -1089,9 +1094,9 @@ function detailHTML(s, d) {
         <tbody>${rows}</tbody>
       </table>
       ${rangeSpanHTML(s)}
-      ${pluginDetailHTML(s)}
-      ${rangeActionsHTML('d-ractions', isRangeMissing(s))}
+      ${rangeInfoFirst ? rangeInfo : ''}
       ${d.preview ? '<section class="d-sec d-pv" data-role="preview"></section>' : ''}
+      ${rangeInfoFirst ? '' : `<div class="d-rinfo-after">${rangeInfo}</div>`}
       <div class="d-stats">
         <div class="stat"><span class="sl">歌った回数</span><span class="sv">${s.singCount}<small>回</small></span>${s.singCount || s.lastSungAt ? `<button type="button" class="stat-reset" data-act="sung-reset" aria-label="歌った回数をリセット" title="歌った回数をリセット">${icon('reset')}</button>` : ''}</div>
         <div class="stat"><span class="sl">最終歌唱日</span><span class="sv">${s.lastSungAt ? fmtDate(s.lastSungAt) : '—'}</span></div>
