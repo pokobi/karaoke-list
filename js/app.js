@@ -23,7 +23,7 @@ import { createLocalStore } from './store-local.js';
 import { createStore } from './store.js';
 import { plugins } from './plugins.js';
 import { COUNTS, EXCLUDE_DAYS, defaultRandomOptions, sanitizeRandomOptions, randomPool, pickRandom, hasRandomRange } from './random.js';
-import { HAPTIC_EVENTS, sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
+import { sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
 import { RANDOM_FX, sanitizeRandomFx, playRandomFx } from './random-fx.js';
 import { previewSupported, createPreview, audioFiles, formatBytes, FILE_ACCEPT, MAX_FILE_BYTES } from './preview.js';
 import { readTags, matchFile } from './audio-match.js';
@@ -3568,7 +3568,6 @@ function openSettings() {
     if (e.target.dataset.role === 'swipe') setDevicePref({ swipe: e.target.checked });
     if (e.target.dataset.role === 'rec-up') updateAccountPrefs({ recUp: e.target.checked });
     if (e.target.dataset.role === 'hap-on') setHaptics({ on: e.target.checked });
-    if (e.target.dataset.hap) setHaptics({ [e.target.dataset.hap]: e.target.checked });
   });
 }
 
@@ -3577,13 +3576,10 @@ function hapticsSettingsHTML() {
   const mode = hapticMode();
   if (!mode) return '';
   const hp = devicePrefs.haptics;
-  const off = hp.on ? '' : ' disabled';
-  return `<section class="set-sec hap-sec${hp.on ? '' : ' off'}">
+  return `<section class="set-sec">
         <h4>触覚フィードバック（この端末）</h4>
         <label class="switch-row"><span>操作したときに振動する</span><input type="checkbox" class="switch" data-role="hap-on"${hp.on ? ' checked' : ''}></label>
-        <span class="set-label">振動する操作</span>
-        ${HAPTIC_EVENTS.map((ev) => `<label class="switch-row"><span>${ev.label}</span><input type="checkbox" class="switch" data-hap="${ev.id}"${hp[ev.id] ? ' checked' : ''}${off}></label>`).join('')}
-        <p class="hint">キーの変更は、±1・原キー・オク下・オク上・おすすめキーへの変更です。${mode === 'ios' ? 'iPhone では iOS 18 以降で、本体の「設定」→「サウンドと触覚」→「システムの触覚」がオンのときに振動します。' : ''}</p>
+        ${mode === 'ios' ? '<p class="hint">iPhone では iOS 18 以降で、本体の「設定」→「サウンドと触覚」→「システムの触覚」がオンのときに振動します。</p>' : ''}
       </section>`;
 }
 

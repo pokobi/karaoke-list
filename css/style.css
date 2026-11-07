@@ -1225,8 +1225,6 @@ textarea.input { resize: vertical; min-height: 84px; }
 .job-text { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .set-sec > .switch-row { margin-bottom: 8px; }
 /* 触覚フィードバックが全体でオフのときは、細かい設定を薄くする */
-.hap-sec.off .switch-row:has([data-hap]) { opacity: .45; }
-.hap-sec.off .switch-row:has([data-hap]) { cursor: default; }
 
 /* 曲名の英語表記を外す */
 .rdg-list { list-style: none; margin: 8px 0 0; padding: 0; }

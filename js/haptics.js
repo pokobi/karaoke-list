@@ -3,14 +3,8 @@
 // - iPhone（Safari）：Vibration API がないため、iOS 18 以降でスイッチ（<input type="checkbox" switch>）を
 //   切り替えたときに出る「コッ」という触覚を借りる。操作（タップなど）の処理の中で呼んだときだけ振動する。
 
-// 設定で 1 つずつオン・オフできる操作
-export const HAPTIC_EVENTS = [
-  { id: 'key', label: 'キーの変更' },
-  { id: 'sung', label: '「歌った！」の記録' },
-  { id: 'fav', label: 'お気に入りの切り替え' },
-  { id: 'random', label: 'ランダム選曲（曲が決まったとき）' },
-];
-
+// 設定はオン・オフだけ（オンのときは、キーの変更・「歌った！」の記録・お気に入りの切り替え・
+// ランダム選曲・スワイプで振動する）。
 // 操作ごとの振動のしかた。tap：1 回／success：記録できたことが分かるよう 2 回
 const KIND = { key: 'tap', fav: 'tap', sung: 'success', random: 'tap' };
 
@@ -21,14 +15,13 @@ const PULSE_GAP = 70;
 const TICK_GAP = 110;
 
 export function defaultHaptics() {
-  return { on: true, key: true, sung: true, fav: true, random: true };
+  return { on: true };
 }
 
+// 以前の版で保存した操作ごとのオン・オフ（key・sung など）は捨てる
 export function sanitizeHaptics(raw) {
   const p = raw && typeof raw === 'object' ? raw : {};
-  const out = { on: p.on !== false };
-  for (const ev of HAPTIC_EVENTS) out[ev.id] = p[ev.id] !== false;
-  return out;
+  return { on: p.on !== false };
 }
 
 export function vibratePattern(kind) {
@@ -79,11 +72,10 @@ function browserEnv() {
   return env;
 }
 
-// event：HAPTIC_EVENTS の id、または 'swipe'（スワイプが実行される位置を超えたとき）
+// event：'key'／'sung'／'fav'／'random'、または 'swipe'（スワイプが実行される位置を超えたとき）
 export function playHaptic(event, prefs, e = browserEnv()) {
   const p = sanitizeHaptics(prefs);
   if (!p.on || !e.mode) return false;
-  if (event in p && !p[event]) return false;
   try {
     const kind = KIND[event] ?? 'tap';
     if (e.mode === 'vibrate') {

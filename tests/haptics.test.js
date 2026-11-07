@@ -6,7 +6,10 @@ const coarse = (yes) => () => ({ matches: yes });
 
 test('触覚フィードバックの設定は、オン・オフだけを残し、壊れた値を既定値に戻す', () => {
   assert.deepEqual(sanitizeHaptics(), defaultHaptics());
-  assert.deepEqual(sanitizeHaptics({ on: false, key: false }), { on: false, key: false, sung: true, fav: true, random: true });
+  assert.deepEqual(defaultHaptics(), { on: true });
+  // 以前の版で保存した操作ごとのオン・オフは捨てる
+  assert.deepEqual(sanitizeHaptics({ on: false, key: false }), { on: false });
+  assert.deepEqual(sanitizeHaptics({ key: false, sung: false }), { on: true });
   // 以前の版で保存した強さ・種類は捨てる
   assert.deepEqual(sanitizeHaptics({ level: 'strong', type: 'pop' }), defaultHaptics());
   assert.equal(sanitizeHaptics('x').on, true);
@@ -46,14 +49,14 @@ function fakeEnv(mode) {
   };
 }
 
-test('設定でオフの操作や、全体がオフのときは振動しない', () => {
+test('オフのときや、振動できない端末では振動しない', () => {
   const { calls, env } = fakeEnv('vibrate');
-  assert.equal(playHaptic('key', { key: false }, env), false);
   assert.equal(playHaptic('sung', { on: false }, env), false);
   assert.equal(playHaptic('swipe', { on: false }, env), false);
   assert.equal(playHaptic('key', {}, { ...env, mode: null }), false);
   assert.equal(calls.vibrate.length, 0);
-  assert.equal(playHaptic('fav', { key: false }, env), true);
+  // 以前の版で操作ごとにオフにしていても、オンなら振動する
+  assert.equal(playHaptic('key', { key: false }, env), true);
   assert.deepEqual(calls.vibrate, [vibratePattern('tap')]);
 });
 
