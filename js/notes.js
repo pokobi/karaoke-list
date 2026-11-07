@@ -150,9 +150,10 @@ export function songSpan(song) {
   return n > 0 ? n : null;
 }
 
-// 音域の広さから見た難易度（星 1〜5）。
-// 〜15 半音（1 オクターブ＋3 まで）：1／16〜19：2／20〜23：3／24〜27（2 オクターブ〜2 オクターブ＋3）：4／28〜：5
-export const SPAN_STAR_STEPS = [16, 20, 24, 28];
+// 音域の広さから見た難易度（星 1〜5）。歌の音域の広さの一般的な目安（1 オクターブに収まれば狭い、
+// 1 オクターブ半〜2 オクターブがふつう、2 オクターブ半以上は広い）に合わせる。
+// 〜12 半音（1 オクターブ以内）：1／13〜17：2／18〜24（1 オクターブ半〜2 オクターブ）：3／25〜29：4／30〜（2 オクターブ半以上）：5
+export const SPAN_STAR_STEPS = [13, 18, 25, 30];
 export function spanStars(n) {
   if (!Number.isFinite(n)) return null;
   return 1 + SPAN_STAR_STEPS.filter((s) => n >= s).length;

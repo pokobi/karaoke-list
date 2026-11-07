@@ -101,6 +101,7 @@ test('音域の広さは、最低音から地声・裏声のうち高いほう�
   assert.equal(songSpan({ low: n('mid1C'), chestHigh: null, falsettoHigh: n('hiC') }), n('hiC') - n('mid1C'));
   assert.equal(songSpan({ low: null, chestHigh: n('hiA'), falsettoHigh: null }), null);
   assert.equal(songSpan({ low: n('mid1C'), chestHigh: null, falsettoHigh: null }), null);
-  assert.deepEqual([0, 15, 16, 19, 20, 23, 24, 27, 28, 40].map(spanStars), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  // 1 オクターブ以内：1／〜1 オクターブ半未満：2／1 オクターブ半〜2 オクターブ：3／〜2 オクターブ半未満：4／2 オクターブ半以上：5
+  assert.deepEqual([0, 12, 13, 17, 18, 24, 25, 29, 30, 40].map(spanStars), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
   assert.equal(spanStars(null), null);
 });
