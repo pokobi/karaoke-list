@@ -141,6 +141,23 @@ export function rangeIssues(song, voice, key = 0) {
   return out;
 }
 
+// 曲の音域の広さ（半音数）。最低音から、地声・裏声のうち高いほうの最高音まで。計算できなければ null
+export function songSpan(song) {
+  if (!song || !isNote(song.low)) return null;
+  const tops = [song.chestHigh, song.falsettoHigh].filter(isNote);
+  if (!tops.length) return null;
+  const n = Math.max(...tops) - song.low;
+  return n > 0 ? n : null;
+}
+
+// 音域の広さから見た難易度（星 1〜5）。
+// 〜15 半音（1 オクターブ＋3 まで）：1／16〜19：2／20〜23：3／24〜27（2 オクターブ〜2 オクターブ＋3）：4／28〜：5
+export const SPAN_STAR_STEPS = [16, 20, 24, 28];
+export function spanStars(n) {
+  if (!Number.isFinite(n)) return null;
+  return 1 + SPAN_STAR_STEPS.filter((s) => n >= s).length;
+}
+
 // おすすめキー：曲の地声最高音が「自分の地声最高音 − offset 半音」になるキー。
 // 地声最高音が分からないときは裏声最高音どうし（自分の裏声最高音がなければ地声最高音）で同じように合わせ、
 // それも分からないときは、最低音が出るキーのうち原曲に近いもの。計算に使える音がなければ null。

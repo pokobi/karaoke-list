@@ -1,6 +1,6 @@
 import { FIREBASE_CONFIG, YOUTUBE_API_KEY } from './config.js';
 import {
-  RANGE_FIELDS, KEY_MIN, KEY_MAX, isNote, noteName, formatKey, keyTone, clampKey, recommendKey, rangeIssues,
+  RANGE_FIELDS, KEY_MIN, KEY_MAX, isNote, noteName, formatKey, keyTone, clampKey, recommendKey, rangeIssues, songSpan, spanStars,
   splitRecKey, describeKey, toggleOctave,
 } from './notes.js';
 import { collator, normalize } from './text.js';
@@ -1027,22 +1027,18 @@ function keepViewState(root) {
   };
 }
 
-// 曲の音域の広さ（最低音から地声・裏声の最高音まで）。キーを変えても変わらない
+// 曲の音域の広さ（最低音から一番高い音まで）と、それをもとにした難易度（星 5 つ）。キーを変えても変わらない
 function rangeSpanHTML(s) {
-  if (!isNote(s.low)) return '';
-  const fmt = (n) => {
-    const oct = Math.floor(n / 12);
-    const rest = n % 12;
-    const o = oct ? `${oct}オクターブ${rest ? `＋${rest}` : ''}` : '';
-    return `<b>${n}半音</b>${o ? `<span class="d-span-o">（${o}）</span>` : ''}`;
-  };
-  const parts = [];
-  if (isNote(s.chestHigh) && s.chestHigh > s.low) parts.push(`地声 ${fmt(s.chestHigh - s.low)}`);
-  // 裏声最高音が地声最高音より高いときだけ、裏声までの広さも出す
-  if (isNote(s.falsettoHigh) && s.falsettoHigh > s.low && !(isNote(s.chestHigh) && s.falsettoHigh <= s.chestHigh)) {
-    parts.push(`裏声まで ${fmt(s.falsettoHigh - s.low)}`);
-  }
-  return parts.length ? `<p class="d-span"><span class="d-span-l">音域の広さ</span><span class="d-span-v">${parts.join('<span class="d-span-sep">・</span>')}</span></p>` : '';
+  const n = songSpan(s);
+  if (n == null) return '';
+  const oct = Math.floor(n / 12);
+  const rest = n % 12;
+  const o = oct ? `${oct}オクターブ${rest ? `＋${rest}` : ''}` : '';
+  const stars = spanStars(n);
+  return `<p class="d-span">
+      <span class="d-span-g"><span class="d-span-l">音域の広さ</span><span class="d-span-v"><b>${n}半音</b>${o ? `<span class="d-span-o">（${o}）</span>` : ''}</span></span>
+      <span class="d-span-g"><span class="d-span-l">難易度</span><span class="d-stars" role="img" aria-label="難易度 5段階中${stars}">${'<span class="on">★</span>'.repeat(stars)}${'<span>★</span>'.repeat(5 - stars)}</span></span>
+    </p>`;
 }
 
 function detailHTML(s, d) {

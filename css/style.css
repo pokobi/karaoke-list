@@ -899,11 +899,13 @@ textarea.input { resize: vertical; min-height: 84px; }
 .d-range td.orig { color: var(--text-2); font-weight: 600; }
 .d-range.same-key .orig { display: none; }
 /* 音域の広さ（表のすぐ下） */
-.d-span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: -8px 2px 16px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.d-span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; margin: -8px 2px 16px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.d-span-g { display: inline-flex; align-items: baseline; gap: 8px; }
 .d-span-l { font-size: 12px; font-weight: 600; color: var(--text-3); }
 .d-span-v b { font-weight: 700; color: var(--text); }
 .d-span-o { font-size: 12px; color: var(--text-3); }
-.d-span-sep { margin: 0 4px; color: var(--text-3); }
+.d-stars { font-size: 15px; letter-spacing: 1px; line-height: 1; color: var(--line-2, var(--surface-3)); }
+.d-stars .on { color: var(--star); }
 .d-range td.mine { color: var(--text-3); font-weight: 600; }
 .d-range .none { color: var(--text-3); font-weight: 400; }
 .d-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }

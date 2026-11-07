@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { noteName, parseNote, formatKey, keyTone, clampKey, recommendKey, rangeIssues, NOTE_MAX } from '../js/notes.js';
+import { noteName, parseNote, formatKey, keyTone, clampKey, recommendKey, rangeIssues, songSpan, spanStars, NOTE_MAX } from '../js/notes.js';
 
 test('音階の表記と番号を相互に変換できる', () => {
   assert.equal(noteName(0), 'lowA');
@@ -90,4 +90,17 @@ test('今のキーで自分の音域を超える音', () => {
   assert.deepEqual(rangeIssues(song, voice, 0), [{ field: 'low', by: 3 }, { field: 'chestHigh', by: 2 }, { field: 'falsettoHigh', by: 5 }]);
   assert.deepEqual(rangeIssues(song, voice, 3), [{ field: 'chestHigh', by: 5 }, { field: 'falsettoHigh', by: 8 }]);
   assert.deepEqual(rangeIssues(song, {}, 0), []);
+});
+
+test('音域の広さは、最低音から地声・裏声のうち高いほうまで。難易度は広さから星 1〜5', () => {
+  const n = parseNote;
+  // mid1C〜hiA（地声）と hiC（裏声）：高いほうの hiC まで
+  assert.equal(songSpan({ low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: n('hiC') }), n('hiC') - n('mid1C'));
+  // 裏声のほうが低くても、高いほう（地声）まで
+  assert.equal(songSpan({ low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: n('mid2G') }), n('hiA') - n('mid1C'));
+  assert.equal(songSpan({ low: n('mid1C'), chestHigh: null, falsettoHigh: n('hiC') }), n('hiC') - n('mid1C'));
+  assert.equal(songSpan({ low: null, chestHigh: n('hiA'), falsettoHigh: null }), null);
+  assert.equal(songSpan({ low: n('mid1C'), chestHigh: null, falsettoHigh: null }), null);
+  assert.deepEqual([0, 15, 16, 19, 20, 23, 24, 27, 28, 40].map(spanStars), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  assert.equal(spanStars(null), null);
 });
