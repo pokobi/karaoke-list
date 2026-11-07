@@ -925,6 +925,10 @@ function paintDetail() {
   $('[data-act="k-reset"]', root).setAttribute('aria-pressed', String(s.key === 0 && !s.octave));
   $('[data-act="k-oct-down"]', root).setAttribute('aria-pressed', String(s.octave === -1));
   $('[data-act="k-oct-up"]', root).setAttribute('aria-pressed', String(s.octave === 1));
+  // 原キーのときは「原曲」と「キー適用後」が同じなので、1 列だけ（原曲として）出す
+  const sameKey = s.key === 0;
+  $('.d-range', root).classList.toggle('same-key', sameKey);
+  $('[data-role="cur-head"]', root).textContent = sameKey ? '原曲' : 'キー適用後';
   // 今のキーで自分の音域を超える音には、注意の印を付ける
   const issues = hasVoice() ? rangeIssues(s, voice(), s.key) : [];
   for (const f of RANGE_FIELDS) {
@@ -1000,7 +1004,7 @@ function detailHTML(s, d) {
         <div class="d-rec" data-role="rec"></div>
       </section>
       <table class="d-range">
-        <thead><tr><th></th><th scope="col">原曲</th><th scope="col">キー適用後</th>${showVoice ? '<th scope="col">自分</th>' : ''}</tr></thead>
+        <thead><tr><th></th><th scope="col" class="orig">原曲</th><th scope="col" data-role="cur-head">キー適用後</th>${showVoice ? '<th scope="col">自分</th>' : ''}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
       ${pluginDetailHTML(s)}

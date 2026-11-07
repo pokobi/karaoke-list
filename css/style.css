@@ -889,6 +889,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 .d-range tbody tr + tr > * { border-top: 1px solid var(--line); }
 .d-range td { font-weight: 700; }
 .d-range td.orig { color: var(--text-2); font-weight: 600; }
+.d-range.same-key .orig { display: none; }
 .d-range td.mine { color: var(--text-3); font-weight: 600; }
 .d-range .none { color: var(--text-3); font-weight: 400; }
 .d-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
