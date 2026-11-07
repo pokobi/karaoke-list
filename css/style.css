@@ -403,8 +403,9 @@ textarea.input { resize: vertical; min-height: 84px; }
   font-weight: 750;
   visibility: hidden;
 }
+.song[data-swipe="right"] .swipe-bg { color: var(--on-accent); }
 .song.swiping .swipe-bg, .song.settling .swipe-bg { visibility: visible; }
-.song[data-swipe="right"] .swipe-bg { background: #16a34a; }
+.song[data-swipe="right"] .swipe-bg { background: var(--accent); }
 .song[data-swipe="left"] .swipe-bg { background: #e0930b; }
 .song[data-swipe="right"] .sw-r, .song[data-swipe="left"] .sw-l { visibility: hidden; }
 .sw-l, .sw-r { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 44px; opacity: .6; transition: opacity .12s, transform .12s; }
@@ -1044,12 +1045,17 @@ textarea.input { resize: vertical; min-height: 84px; }
 .rnd-rec-t b { font-weight: 750; font-variant-numeric: tabular-nums; }
 .rnd-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; }
 .rnd-actions .btn { background: var(--surface); }
-/* 「歌った！」は、一覧のスワイプで記録するときと同じ緑で目立たせる */
-.btn.btn-sung, .rnd-actions .btn.btn-sung { background: #16a34a; border-color: transparent; color: #fff; font-weight: 750; }
-.btn.btn-sung:active:not(:disabled) { background: #15803d; }
-.btn.btn-sung .ic { width: 18px; height: 18px; }
+/* 「歌った！」はどこでもアクセントカラーの塗りつぶし（詳細画面・ランダム選曲・一覧のスワイプ） */
+.rnd-actions .btn.btn-sung { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+.btn.btn-sung { font-weight: 750; }
 .btn.btn-sung.sm { align-self: flex-start; margin-left: 32px; min-height: 32px; height: 32px; padding: 0 14px; font-size: 13px; border-radius: 10px; }
 .btn.btn-sung.sm .ic { width: 15px; height: 15px; }
+/* ランダム選曲を開いてから記録した曲 */
+.btn-sung-done { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 12px; background: var(--accent-weak); color: var(--accent); font-size: 14px; font-weight: 700; }
+.btn-sung-done .ic { width: 17px; height: 17px; }
+.btn-sung-done.sm { align-self: flex-start; margin-left: 32px; min-height: 32px; height: 32px; font-size: 12.5px; border-radius: 10px; }
+.btn-sung-done.sm .ic { width: 15px; height: 15px; }
+.sung-check-layer .rnd-art.sm { width: 40px; height: 40px; }
 .rnd-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .rnd-list li { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 13px; background: var(--surface-2); }
 .rnd-row { display: flex; align-items: center; gap: 10px; text-align: left; width: 100%; }
@@ -1161,7 +1167,7 @@ textarea.input { resize: vertical; min-height: 84px; }
 /* ランダム選曲の演出 */
 .fx-pending { position: relative; }
 .fx-host { position: relative; overflow: hidden; }
-.fx-pending .rnd-info, .fx-pending .btn-sung, .fx-pending .rnd-actions { visibility: hidden; }
+.fx-pending .rnd-info, .fx-pending .btn-sung, .fx-pending .btn-sung-done, .fx-pending .rnd-actions { visibility: hidden; }
 .fx-overlay { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: var(--surface-2); pointer-events: none; }
 .fx-overlay .fx-in { height: 100%; }
 .fx-overlay .rnd-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

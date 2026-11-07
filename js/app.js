@@ -87,7 +87,7 @@ const state = {
   artistsSheet: null,
   filterSheet: null,
   historySheet: null,
-  random: { opts: null, sheet: null, picks: [], artistQuery: '' },
+  random: { opts: null, sheet: null, picks: [], artistQuery: '', session: null },
   select: { on: false, ids: new Set() },
   tagSheet: null,
   bulkSheet: null,
@@ -1044,7 +1044,7 @@ function detailHTML(s, d) {
         <div class="stat"><span class="sl">最終歌唱日</span><span class="sv">${s.lastSungAt ? fmtDate(s.lastSungAt) : '—'}</span></div>
         <div class="stat"><span class="sl">採点</span><span class="sv">${s.score != null ? `${fmtScore(s.score)}<small>点</small>` : '—'}</span></div>
       </div>
-      <button type="button" class="btn primary wide sung" data-act="sung">${icon('mic')}歌った！</button>
+      <button type="button" class="btn primary wide sung btn-sung" data-act="sung">${icon('mic')}歌った！</button>
       <section class="d-sec d-tagsec">
         <span class="label">タグ</span>
         <div class="chip-set">${tagList().map((t) => `<button type="button" class="chip${s.tags.includes(t) ? ' on' : ''}"${tagC(t)} data-dtag="${esc(t)}" aria-pressed="${s.tags.includes(t)}">${esc(t)}</button>`).join('')}<button type="button" class="chip add" data-act="tag-new">${icon('plus')}新しいタグ</button></div>
@@ -1188,11 +1188,67 @@ function hasRandomCondition() {
 function reroll() {
   const r = state.random;
   stopRandomFx();
-  r.picks = pickRandom(randomPoolNow(), r.opts.count, { weighted: r.opts.preferLessSung, avoid: new Set(r.picks) }).map((s) => s.id);
+  // ランダム選曲を開いている間に一度出た曲は、もう出さない（条件に合う曲が足りないときだけ、また出す）
+  const shown = r.session?.shown ?? [];
+  r.picks = pickRandom(randomPoolNow(), r.opts.count, { weighted: r.opts.preferLessSung, avoid: new Set([...shown, ...r.picks]) }).map((s) => s.id);
+  if (r.session) for (const id of r.picks) if (!shown.includes(id)) shown.push(id);
   r.step = 'result';
   paintRandom();
   $('.sheet-body', r.sheet.el).scrollTop = 0;
   startRandomFx();
+}
+
+// この回のランダム選曲で出た曲のうち、「歌った！」を記録していない曲（新しく出た順）
+function unrecordedRandomSongs() {
+  const se = state.random.session;
+  if (!se) return [];
+  return se.shown.map((id) => state.byId.get(id)).filter((s) => s && !(s.lastSungAt >= se.since)).reverse();
+}
+
+// ランダム選曲を閉じたあと、記録していない曲から、歌った曲をまとめて記録してもらう
+// （記録し忘れると「最近歌った曲を除く」が効かず、同じ曲がまた出るため）
+function askSungAfterRandom(songs) {
+  const sheet = openSheet(`<div class="rdg">
+      <div class="sheet-head"><h3>歌った曲を記録</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+      <div class="sheet-body">
+        <p class="hint">ランダム選曲で出た曲のうち、「歌った！」を記録していない曲です。歌った曲にチェックを付けてください。</p>
+        <ul class="rdg-list">${songs.map((s, i) => `<li><label class="rdg-row">
+            <input type="checkbox" data-i="${i}">
+            ${randomArt(s, 'rnd-art sm')}
+            <span class="rdg-text"><span class="rdg-to">${esc(s.title)}</span><span class="rdg-from">${esc(s.artist)}</span></span>
+          </label></li>`).join('')}</ul>
+      </div>
+      <div class="sheet-foot"><button type="button" class="btn" data-act="close">記録しない</button><button type="button" class="btn primary" data-act="apply"></button></div>
+    </div>`, { label: '歌った曲を記録', className: 'sung-check-layer' });
+  const btn = $('[data-act="apply"]', sheet.el);
+  const checked = () => $$('input[data-i]', sheet.el).filter((c) => c.checked).map((c) => songs[+c.dataset.i]);
+  const paint = () => {
+    const n = checked().length;
+    btn.innerHTML = `${icon('mic')}${n ? `記録する（${n}曲）` : '記録する'}`;
+    btn.disabled = !n;
+  };
+  sheet.el.addEventListener('change', paint);
+  sheet.el.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.act === 'close') sheet.close();
+    else if (b.dataset.act === 'apply') {
+      markSungMany(checked().map((s) => s.id));
+      sheet.close();
+    }
+  });
+  paint();
+}
+
+// 何曲かまとめて「歌った！」を記録する（あとから元に戻せる）
+function markSungMany(ids) {
+  const list = ids.map((id) => state.byId.get(id)).filter(Boolean);
+  if (!list.length) return;
+  const now = Date.now();
+  const prev = list.map((s) => ({ id: s.id, data: { singCount: s.singCount, lastSungAt: s.lastSungAt } }));
+  haptic('sung');
+  state.store.putSongs(list.map((s) => ({ id: s.id, data: { singCount: s.singCount + 1, lastSungAt: now } })));
+  toast(`${list.length}曲を記録しました`, { action: '元に戻す', onAction: () => state.store.putSongs(prev) });
 }
 
 // ---- 選んでいる途中の演出 ----
@@ -1282,9 +1338,15 @@ function openRandom() {
     onClose: () => {
       stopRandomFx();
       state.random.sheet = null;
+      const missed = unrecordedRandomSongs();
+      state.random.session = null;
+      // 閉じる動き（履歴を戻す処理）が終わってから開く
+      if (missed.length) setTimeout(() => askSungAfterRandom(missed), 360);
     },
   });
   state.random.sheet = sheet;
+  // since：開いた時刻（これより後に記録した曲は「歌った」とみなす）、shown：この回で出た曲（出た順）
+  state.random.session = { since: Date.now(), shown: [] };
   state.random.picks = [];
   state.random.step = 'cond';
   paintRandomConditions();
@@ -1330,7 +1392,11 @@ function randomRecText(s) {
   return `<span class="rnd-rec-t">おすすめ ${recKeyHTML(rec.key)}</span>`;
 }
 
-const rndSungBtn = (s, cls = '') => `<button type="button" class="btn btn-sung${cls}" data-sung="${esc(s.id)}">${icon('mic')}歌った！</button>`;
+// ランダム選曲を開いてから「歌った！」を記録した曲か
+const sungInRandom = (s) => !!state.random.session && s.lastSungAt >= state.random.session.since;
+const rndSungBtn = (s, cls = '') => (sungInRandom(s)
+  ? `<span class="btn-sung-done${cls}">${icon('check')}記録しました</span>`
+  : `<button type="button" class="btn primary btn-sung${cls}" data-sung="${esc(s.id)}">${icon('mic')}歌った！</button>`);
 
 const rndMainHTML = (s) => `${randomArt(s, 'rnd-art')}
   <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span></span>`;
