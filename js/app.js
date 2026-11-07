@@ -1,6 +1,6 @@
 import { FIREBASE_CONFIG, YOUTUBE_API_KEY } from './config.js';
 import {
-  RANGE_FIELDS, KEY_MIN, KEY_MAX, isNote, noteName, formatKey, keyTone, clampKey, recommendKey, rangeIssues, songSpan, spanStars,
+  RANGE_FIELDS, KEY_MIN, KEY_MAX, isNote, noteName, formatKey, keyTone, clampKey, recommendKey, rangeIssues, songSpan, spanLevel, SPAN_LEVEL_MAX,
   splitRecKey, describeKey, toggleOctave,
 } from './notes.js';
 import { collator, normalize } from './text.js';
@@ -1027,17 +1027,21 @@ function keepViewState(root) {
   };
 }
 
-// 曲の音域の広さ（最低音から一番高い音まで）と、それをもとにした難易度（星 5 つ）。キーを変えても変わらない
+// 難易度のゲージの色。1（緑）から 10（赤）へ、高いほど赤くする（色相 140 → 0）
+const levelHue = (i) => Math.round(140 - ((i - 1) * 140) / (SPAN_LEVEL_MAX - 1));
+
+// 曲の音域の広さ（最低音から一番高い音まで）と、それをもとにした難易度（10 段階のゲージ）。キーを変えても変わらない
 function rangeSpanHTML(s) {
   const n = songSpan(s);
   if (n == null) return '';
   const oct = Math.floor(n / 12);
   const rest = n % 12;
   const o = oct ? `${oct}オクターブ${rest ? `＋${rest}` : ''}` : '';
-  const stars = spanStars(n);
+  const lv = spanLevel(n);
+  const cells = Array.from({ length: SPAN_LEVEL_MAX }, (_, i) => `<span class="d-gauge-c${i < lv ? ' on' : ''}" style="--h:${levelHue(i + 1)}"></span>`).join('');
   return `<p class="d-span">
       <span class="d-span-g"><span class="d-span-l">音域の広さ</span><span class="d-span-v"><b>${n}半音</b>${o ? `<span class="d-span-o">（${o}）</span>` : ''}</span></span>
-      <span class="d-span-g"><span class="d-span-l">難易度</span><span class="d-stars" role="img" aria-label="難易度 5段階中${stars}">${'<span class="on">★</span>'.repeat(stars)}${'<span>★</span>'.repeat(5 - stars)}</span></span>
+      <span class="d-span-g"><span class="d-span-l">難易度</span><span class="d-gauge" role="meter" aria-label="難易度" aria-valuemin="1" aria-valuemax="${SPAN_LEVEL_MAX}" aria-valuenow="${lv}" aria-valuetext="10段階中${lv}">${cells}</span><b class="d-gauge-n" style="--h:${levelHue(lv)}">${lv}</b></span>
     </p>`;
 }
 

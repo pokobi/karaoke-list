@@ -18,6 +18,7 @@
   --down: #2563eb;
   --down-weak: #e8effd;
   --star: #f2a516;
+  --gauge-l: 45%;
   --danger: #dc2626;
   --danger-weak: #fdecec;
   --ok: #16a34a;
@@ -52,6 +53,7 @@
     --down: #5e9dff;
     --down-weak: #172641;
     --star: #f6b84a;
+    --gauge-l: 58%;
     --danger: #f87171;
     --danger-weak: #3a1b1f;
     --ok: #4ade80;
@@ -82,6 +84,7 @@
   --down: #5e9dff;
   --down-weak: #172641;
   --star: #f6b84a;
+  --gauge-l: 58%;
   --danger: #f87171;
   --danger-weak: #3a1b1f;
   --ok: #4ade80;
@@ -904,8 +907,13 @@ textarea.input { resize: vertical; min-height: 84px; }
 .d-span-l { font-size: 12px; font-weight: 600; color: var(--text-3); }
 .d-span-v b { font-weight: 700; color: var(--text); }
 .d-span-o { font-size: 12px; color: var(--text-3); }
-.d-stars { font-size: 15px; letter-spacing: 1px; line-height: 1; color: var(--line-2, var(--surface-3)); }
-.d-stars .on { color: var(--star); }
+/* 難易度のゲージ：10 マス。埋まったマスは、低いほど緑、高いほど赤（色相は --h） */
+.d-gauge { display: inline-flex; gap: 2px; align-self: center; }
+.d-gauge-c { width: 9px; height: 10px; border-radius: 2px; background: var(--line-2); }
+.d-gauge-c:first-child { border-radius: 4px 2px 2px 4px; }
+.d-gauge-c:last-child { border-radius: 2px 4px 4px 2px; }
+.d-gauge-c.on { background: hsl(var(--h) 72% var(--gauge-l)); }
+.d-gauge-n { min-width: 1.4em; font-size: 14px; font-weight: 800; color: hsl(var(--h) 72% var(--gauge-l)); }
 .d-range td.mine { color: var(--text-3); font-weight: 600; }
 .d-range .none { color: var(--text-3); font-weight: 400; }
 .d-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }

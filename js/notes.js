@@ -150,13 +150,15 @@ export function songSpan(song) {
   return n > 0 ? n : null;
 }
 
-// 音域の広さから見た難易度（星 1〜5）。歌の音域の広さの一般的な目安（1 オクターブに収まれば狭い、
-// 1 オクターブ半〜2 オクターブがふつう、2 オクターブ半以上は広い）に合わせる。
-// 〜12 半音（1 オクターブ以内）：1／13〜17：2／18〜24（1 オクターブ半〜2 オクターブ）：3／25〜29：4／30〜（2 オクターブ半以上）：5
-export const SPAN_STAR_STEPS = [13, 18, 25, 30];
-export function spanStars(n) {
+// 音域の広さから見た難易度（1〜10）。歌の音域の広さの一般的な目安（1 オクターブに収まれば狭い、
+// 1 オクターブ半〜2 オクターブがふつう、2 オクターブ半以上は広い、3 オクターブ以上はとても広い）に合わせる。
+// 〜8 半音：1／9〜12（1 オクターブ以内）：2／13〜15：3／16〜17：4／18〜20（1 オクターブ半〜）：5／
+// 21〜24（〜2 オクターブ）：6／25〜27：7／28〜29：8／30〜35（2 オクターブ半〜）：9／36〜（3 オクターブ〜）：10
+export const SPAN_LEVEL_MAX = 10;
+export const SPAN_LEVEL_STEPS = [9, 13, 16, 18, 21, 25, 28, 30, 36];
+export function spanLevel(n) {
   if (!Number.isFinite(n)) return null;
-  return 1 + SPAN_STAR_STEPS.filter((s) => n >= s).length;
+  return 1 + SPAN_LEVEL_STEPS.filter((s) => n >= s).length;
 }
 
 // おすすめキー：曲の地声最高音が「自分の地声最高音 − offset 半音」になるキー。

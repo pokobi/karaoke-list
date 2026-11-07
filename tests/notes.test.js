@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { noteName, parseNote, formatKey, keyTone, clampKey, recommendKey, rangeIssues, songSpan, spanStars, NOTE_MAX } from '../js/notes.js';
+import { noteName, parseNote, formatKey, keyTone, clampKey, recommendKey, rangeIssues, songSpan, spanLevel, NOTE_MAX } from '../js/notes.js';
 
 test('音階の表記と番号を相互に変換できる', () => {
   assert.equal(noteName(0), 'lowA');
@@ -92,7 +92,7 @@ test('今のキーで自分の音域を超える音', () => {
   assert.deepEqual(rangeIssues(song, {}, 0), []);
 });
 
-test('音域の広さは、最低音から地声・裏声のうち高いほうまで。難易度は広さから星 1〜5', () => {
+test('音域の広さは、最低音から地声・裏声のうち高いほうまで。難易度は広さから 1〜10', () => {
   const n = parseNote;
   // mid1C〜hiA（地声）と hiC（裏声）：高いほうの hiC まで
   assert.equal(songSpan({ low: n('mid1C'), chestHigh: n('hiA'), falsettoHigh: n('hiC') }), n('hiC') - n('mid1C'));
@@ -101,7 +101,8 @@ test('音域の広さは、最低音から地声・裏声のうち高いほう�
   assert.equal(songSpan({ low: n('mid1C'), chestHigh: null, falsettoHigh: n('hiC') }), n('hiC') - n('mid1C'));
   assert.equal(songSpan({ low: null, chestHigh: n('hiA'), falsettoHigh: null }), null);
   assert.equal(songSpan({ low: n('mid1C'), chestHigh: null, falsettoHigh: null }), null);
-  // 1 オクターブ以内：1／〜1 オクターブ半未満：2／1 オクターブ半〜2 オクターブ：3／〜2 オクターブ半未満：4／2 オクターブ半以上：5
-  assert.deepEqual([0, 12, 13, 17, 18, 24, 25, 29, 30, 40].map(spanStars), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
-  assert.equal(spanStars(null), null);
+  // 1 オクターブ（12）までが 1〜2、1 オクターブ半（18）〜2 オクターブ（24）が 5〜6、2 オクターブ半（30）から 9、3 オクターブ（36）から 10
+  assert.deepEqual([0, 8, 9, 12, 13, 15, 16, 17, 18, 20, 21, 24, 25, 27, 28, 29, 30, 35, 36, 48].map(spanLevel),
+    [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10]);
+  assert.equal(spanLevel(null), null);
 });
