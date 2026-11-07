@@ -95,8 +95,9 @@
         <label class="switch-row"><span>お気に入りのみ</span><input type="checkbox" id="f-fav" class="switch"></label>
         <label class="switch-row"><span>音域が未入力の曲のみ</span><input type="checkbox" id="f-missing" class="switch"></label>
         <div class="fp-sec">
-          <label class="label" for="f-artist">アーティスト</label>
-          <select id="f-artist" class="input select"></select>
+          <div class="label-row"><span class="label" id="f-artist-label">アーティスト</span><button type="button" class="link-btn" data-act="artists-clear" hidden>選択を解除</button></div>
+          <label class="search sm" id="f-artist-search" hidden><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><input type="search" id="f-artist-q" placeholder="アーティストを探す" autocomplete="off" aria-label="アーティストを探す"></label>
+          <div id="f-artists" class="chip-set"></div>
         </div>
         <div class="fp-sec">
           <span class="label">タグ</span>

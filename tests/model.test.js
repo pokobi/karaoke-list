@@ -21,14 +21,20 @@ test('検索はひらがな・カタカナや全角半角の違いを吸収す�
 });
 
 test('アーティスト・タグ・お気に入りで絞り込める', () => {
-  assert.deepEqual(applyView(songs, view({ artist: 'ソラシド' }), '').map((s) => s.id).sort(), ['a', 'c']);
+  assert.deepEqual(applyView(songs, view({ artists: ['ソラシド'] }), '').map((s) => s.id).sort(), ['a', 'c']);
+  // アーティストは何組でも選べる（どれかの曲を出す）
+  assert.deepEqual(applyView(songs, view({ artists: ['ソラシド', 'スピッツ'] }), '').map((s) => s.id).sort(), ['a', 'c', 'd']);
+  // 以前の版で保存した 1 組だけの絞り込み（artist）も引き継ぐ
+  assert.deepEqual(sanitizeView({ artist: 'ソラシド' }).artists, ['ソラシド']);
+  assert.deepEqual(sanitizeView({ artists: ['A', 'A', 1, ''] }).artists, ['A']);
+  assert.deepEqual(sanitizeView({}).artists, []);
   assert.deepEqual(applyView(songs, view({ tags: ['バラード'] }), '').map((s) => s.id), ['a']);
   assert.deepEqual(applyView(songs, view({ favoriteOnly: true }), '').map((s) => s.id), ['b']);
 });
 
 test('除くタグが付いている曲は一覧に出さない', () => {
   assert.deepEqual(applyView(songs, view({ exTags: ['バラード'] }), '').map((s) => s.id).sort(), ['b', 'c', 'd']);
-  assert.deepEqual(applyView(songs, view({ artist: 'ソラシド', exTags: ['バラード'] }), '').map((s) => s.id), ['c']);
+  assert.deepEqual(applyView(songs, view({ artists: ['ソラシド'], exTags: ['バラード'] }), '').map((s) => s.id), ['c']);
   assert.deepEqual(sanitizeView({ exTags: ['バラード', 1] }).exTags, ['バラード']);
   assert.deepEqual(sanitizeView({}).exTags, []);
 });

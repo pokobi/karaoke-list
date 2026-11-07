@@ -88,6 +88,7 @@ const state = {
   filterSheet: null,
   historySheet: null,
   random: { opts: null, sheet: null, picks: [], artistQuery: '', session: null },
+  filterArtistQuery: '', // 絞り込みのアーティストの検索語
   select: { on: false, ids: new Set() },
   tagSheet: null,
   bulkSheet: null,
@@ -531,7 +532,7 @@ function renderList(list) {
 
 function filterCount() {
   const v = state.view;
-  return (v.favoriteOnly ? 1 : 0) + (v.missingRange ? 1 : 0) + (v.artist ? 1 : 0) + v.tags.length + v.exTags.length
+  return (v.favoriteOnly ? 1 : 0) + (v.missingRange ? 1 : 0) + v.artists.length + v.tags.length + v.exTags.length
     + RANGE_FIELDS.filter((f) => isNote(v.range[f.id]?.min) || isNote(v.range[f.id]?.max)).length;
 }
 
@@ -555,7 +556,7 @@ function renderChips() {
   const chips = [];
   if (v.favoriteOnly) chips.push({ k: 'fav', label: `${icon('star-fill', 'chip-star')}お気に入り` });
   if (v.missingRange) chips.push({ k: 'missing', label: '音域未入力' });
-  if (v.artist) chips.push({ k: 'artist', label: esc(v.artist) });
+  for (const a of v.artists) chips.push({ k: `artist:${a}`, label: esc(a) });
   for (const t of v.tags) chips.push({ k: `tag:${t}`, label: `${icon('tag')}${esc(t)}` });
   for (const t of v.exTags) chips.push({ k: `extag:${t}`, label: `${icon('tag')}${esc(t)}を除く` });
   for (const f of RANGE_FIELDS) {
@@ -583,10 +584,7 @@ function renderFilterPanel() {
   const v = state.view;
   $('#f-fav').checked = v.favoriteOnly;
   $('#f-missing').checked = v.missingRange;
-  const names = [...counts.keys()].sort(collator.compare);
-  if (v.artist && !counts.has(v.artist)) names.unshift(v.artist);
-  $('#f-artist').innerHTML = `<option value="">すべてのアーティスト</option>`
-    + names.map((n) => `<option value="${esc(n)}"${n === v.artist ? ' selected' : ''}>${esc(n)}（${counts.get(n) ?? 0}）</option>`).join('');
+  paintFilterArtists();
   $('#f-tags').innerHTML = tags.map((t) => `<button type="button" class="chip${v.tags.includes(t) ? ' on' : ''}"${tagC(t)} data-tag="${esc(t)}" aria-pressed="${v.tags.includes(t)}">${esc(t)}</button>`).join('');
   $('#f-extags').innerHTML = exTagChips(tags, v.exTags);
   $$('#f-basis button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v.basis)));
@@ -634,7 +632,33 @@ function updateView(patch) {
 
 function clearFilters() {
   const d = defaultView();
-  updateView({ favoriteOnly: false, missingRange: false, artist: '', tags: [], exTags: [], range: d.range });
+  updateView({ favoriteOnly: false, missingRange: false, artists: [], tags: [], exTags: [], range: d.range });
+}
+
+// 絞り込みのアーティスト。ランダム選曲と同じく、検索欄とボタンで何組でも選べる
+function paintFilterArtists() {
+  const v = state.view;
+  $('#f-artist-label').textContent = v.artists.length ? `アーティスト（${v.artists.length}組を選択中）` : 'アーティスト';
+  $('#filter-panel [data-act="artists-clear"]').hidden = !v.artists.length;
+  $('#f-artist-search').hidden = artistCounts(state.songs).size <= ARTIST_SEARCH_MIN;
+  $('#f-artists').innerHTML = artistChipsHTML(v.artists, state.filterArtistQuery);
+}
+
+// アーティストのボタン（絞り込み・ランダム選曲で共通）。選んだものを先に、そのあと曲数の多い順。
+// 多いときは上から LIMIT 組だけ出し、残りは検索で探してもらう
+const ARTIST_SEARCH_MIN = 12;
+const ARTIST_CHIP_LIMIT = 40;
+function artistChipsHTML(selected, query) {
+  const counts = artistCounts(state.songs);
+  const q = normalize(query);
+  const names = [...new Set([...selected, ...counts.keys()])]
+    .filter((n) => selected.includes(n) || !q || normalize(n).includes(q))
+    .sort((a, b) => Number(selected.includes(b)) - Number(selected.includes(a)) || (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || collator.compare(a, b));
+  return names.slice(0, ARTIST_CHIP_LIMIT).map((n) => {
+    const on = selected.includes(n);
+    return `<button type="button" class="chip${on ? ' on' : ''}" data-artist="${esc(n)}" aria-pressed="${on}">${esc(n)}<span class="chip-n">${counts.get(n) ?? 0}</span></button>`;
+  }).join('') + (names.length > ARTIST_CHIP_LIMIT ? `<span class="hint">ほか${names.length - ARTIST_CHIP_LIMIT}組（検索で絞り込めます）</span>` : '')
+    + (!names.length ? '<span class="hint">見つかりません</span>' : '');
 }
 
 // 「除くタグ」のボタン。選ぶと取り消し線を引いた見た目になる
@@ -704,7 +728,7 @@ function bindStatic() {
     if (k === 'all') clearFilters();
     else if (k === 'fav') updateView({ favoriteOnly: false });
     else if (k === 'missing') updateView({ missingRange: false });
-    else if (k === 'artist') updateView({ artist: '' });
+    else if (k.startsWith('artist:')) updateView({ artists: state.view.artists.filter((a) => a !== k.slice(7)) });
     else if (k.startsWith('tag:')) updateView({ tags: state.view.tags.filter((t) => t !== k.slice(4)) });
     else if (k.startsWith('extag:')) updateView({ exTags: state.view.exTags.filter((t) => t !== k.slice(6)) });
     else if (k.startsWith('range:')) updateView({ range: { ...state.view.range, [k.slice(6)]: {} } });
@@ -728,13 +752,23 @@ function bindStatic() {
   fp.addEventListener('change', (e) => {
     if (e.target.id === 'f-fav') updateView({ favoriteOnly: e.target.checked });
     else if (e.target.id === 'f-missing') updateView({ missingRange: e.target.checked });
-    else if (e.target.id === 'f-artist') updateView({ artist: e.target.value });
+  });
+  fp.addEventListener('input', (e) => {
+    if (e.target.id !== 'f-artist-q') return;
+    state.filterArtistQuery = e.target.value;
+    paintFilterArtists();
   });
   fp.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.tag != null || b.dataset.extag != null) {
       updateView(toggleTagCondition(state.view, b.dataset.tag ?? b.dataset.extag, b.dataset.extag != null));
+    } else if (b.dataset.artist != null) {
+      const a = b.dataset.artist;
+      const cur = state.view.artists;
+      updateView({ artists: cur.includes(a) ? cur.filter((x) => x !== a) : [...cur, a] });
+    } else if (b.dataset.act === 'artists-clear') {
+      updateView({ artists: [] });
     } else if (b.dataset.v) {
       updateView({ basis: b.dataset.v });
     } else if (b.dataset.bound) {
@@ -1104,7 +1138,7 @@ async function onDetailClick(e) {
     case 'delete': removeSong(s.id); break;
     case 'artist':
       d.sheet.close();
-      updateView({ artist: s.artist });
+      updateView({ artists: [s.artist] });
       toast(`「${s.artist}」の曲を表示しています`);
       break;
     default:
@@ -1467,7 +1501,7 @@ function paintRandomConditions() {
     <label class="switch-row"><span>お気に入りのみ</span><input type="checkbox" class="switch" data-opt="favoriteOnly"${o.favoriteOnly ? ' checked' : ''}></label>
     <div class="fp-sec">
       <div class="label-row"><span class="label">アーティスト${o.artists.length ? `（${o.artists.length}組を選択中）` : ''}</span>${o.artists.length ? '<button type="button" class="link-btn" data-act="artists-clear">選択を解除</button>' : ''}</div>
-      ${artistCount > 12 ? `<label class="search sm">${icon('search')}<input type="search" data-role="artist-q" placeholder="アーティストを探す" autocomplete="off" aria-label="アーティストを探す" value="${esc(state.random.artistQuery)}"></label>` : ''}
+      ${artistCount > ARTIST_SEARCH_MIN ? `<label class="search sm">${icon('search')}<input type="search" data-role="artist-q" placeholder="アーティストを探す" autocomplete="off" aria-label="アーティストを探す" value="${esc(state.random.artistQuery)}"></label>` : ''}
       <div class="chip-set" data-role="artist-chips"></div>
     </div>
     <div class="fp-sec">
@@ -1509,18 +1543,7 @@ function paintArtistChips() {
   const sheet = state.random.sheet;
   const box = sheet && $('[data-role="artist-chips"]', sheet.el);
   if (!box) return;
-  const o = state.random.opts;
-  const counts = artistCounts(state.songs);
-  const q = normalize(state.random.artistQuery);
-  const LIMIT = 40;
-  const names = [...counts.keys()]
-    .filter((n) => o.artists.includes(n) || !q || normalize(n).includes(q))
-    .sort((a, b) => Number(o.artists.includes(b)) - Number(o.artists.includes(a)) || counts.get(b) - counts.get(a) || collator.compare(a, b));
-  box.innerHTML = names.slice(0, LIMIT).map((n) => {
-    const on = o.artists.includes(n);
-    return `<button type="button" class="chip${on ? ' on' : ''}" data-artist="${esc(n)}" aria-pressed="${on}">${esc(n)}<span class="chip-n">${counts.get(n)}</span></button>`;
-  }).join('') + (names.length > LIMIT ? `<span class="hint">ほか${names.length - LIMIT}組（検索で絞り込めます）</span>` : '')
-    + (!names.length ? '<span class="hint">見つかりません</span>' : '');
+  box.innerHTML = artistChipsHTML(state.random.opts.artists, state.random.artistQuery);
 }
 
 async function onRandomClick(e) {

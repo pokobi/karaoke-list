@@ -84,7 +84,7 @@ export function defaultView() {
   return {
     favoriteOnly: false,
     missingRange: false,
-    artist: '',
+    artists: [], // どれかのアーティストの曲だけ出す
     tags: [],
     exTags: [], // 除くタグ（どれか 1 つでも付いている曲は出さない）
     range: { low: {}, chestHigh: {}, falsettoHigh: {} },
@@ -106,7 +106,10 @@ export function sanitizeView(v) {
   return {
     favoriteOnly: v.favoriteOnly === true,
     missingRange: v.missingRange === true,
-    artist: typeof v.artist === 'string' ? v.artist : '',
+    // 以前の版は 1 組だけ（artist）だった
+    artists: Array.isArray(v.artists)
+      ? [...new Set(v.artists.filter((a) => typeof a === 'string' && a))]
+      : (typeof v.artist === 'string' && v.artist ? [v.artist] : []),
     tags: Array.isArray(v.tags) ? v.tags.filter((t) => typeof t === 'string') : [],
     exTags: Array.isArray(v.exTags) ? v.exTags.filter((t) => typeof t === 'string') : [],
     range,
@@ -130,7 +133,7 @@ export function hasRangeFilter(view) {
 export function matches(song, view, terms) {
   if (view.favoriteOnly && !song.favorite) return false;
   if (view.missingRange && !isRangeMissing(song)) return false;
-  if (view.artist && song.artist !== view.artist) return false;
+  if (view.artists?.length && !view.artists.includes(song.artist)) return false;
   if (view.tags.length && !view.tags.some((t) => song.tags.includes(t))) return false;
   if (view.exTags?.length && view.exTags.some((t) => song.tags.includes(t))) return false;
   for (const f of RANGE_FIELDS) {
