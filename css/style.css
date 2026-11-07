@@ -732,7 +732,7 @@ textarea.input { resize: vertical; min-height: 84px; }
   text-align: left;
 }
 .rec-btn b { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.rec-btn b.tone-zero { color: var(--text); }
+.rec-btn .rec-key .tone-zero { color: var(--text); }
 .rec-btn .rec-go { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; color: var(--accent); }
 .rec-btn .rec-go .ic { width: 16px; height: 16px; }
 .rec-ok { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); padding: 4px 2px; }

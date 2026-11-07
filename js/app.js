@@ -140,8 +140,13 @@ const fmtDate = (ms) => {
 const fmtScore = (v) => (v == null ? '' : String(Math.round(v * 1000) / 1000));
 const keyText = (k) => formatKey(k);
 // 実際のキー（原曲からのずれ）を、オク下・オク上つきの表示にする（おすすめキーなど）
-// おすすめキーの表記（機械のキーが ±6 を超えるときはオク下・オク上で出す）
-const recKeyText = (total) => describeKey(total, splitRecKey(total).octave).text;
+// おすすめキーの表記（機械のキーが ±6 を超えるときはオク下・オク上で出す）。
+// 「オク下」は下げる色、「オク上」は上げる色にし、機械のキーはその向きの色にする（例：オク下は青、+2 は赤）
+function recKeyHTML(total) {
+  const d = describeKey(total, splitRecKey(total).octave);
+  const oct = d.oct ? `<span class="tone-${d.octave < 0 ? 'down' : 'up'}">${d.oct}</span> ` : '';
+  return `<b class="rec-key">${oct}<span class="tone-${keyTone(d.machine)}">${d.main}</span></b>`;
+}
 // 今のキーの設定が、おすすめキーの設定（実際のキーとオク下・オク上）と同じか
 const isRecSetting = (s, total) => s.key === total && (s.octave || 0) === splitRecKey(total).octave;
 
@@ -828,10 +833,10 @@ function recommendHTML(s, { compact = false } = {}) {
   if (!rec) return '<p class="rec-note">音域が未入力のため、おすすめキーを計算できません</p>';
   const note = rec.fits ? '' : `<p class="rec-note warn" style="--warn:${warnColor(Math.max(...rec.issues.map((x) => x.by)))}">${icon('alert')}<span>おすすめキーでも、${rec.issues.map(issueText).join('、')}です</span></p>`;
   if (isRecSetting(s, rec.key)) {
-    return `<div class="rec-ok">${icon('check')}<span>おすすめキー（<b class="tone-${keyTone(splitRecKey(rec.key).machine)}">${recKeyText(rec.key)}</b>）です</span></div>${note}`;
+    return `<div class="rec-ok">${icon('check')}<span>おすすめキー（${recKeyHTML(rec.key)}）です</span></div>${note}`;
   }
   return `<button type="button" class="rec-btn" data-k="${rec.key}">
-      <span class="rec-l">おすすめ</span><b class="tone-${keyTone(splitRecKey(rec.key).machine)}">${recKeyText(rec.key)}</b><span class="rec-go">${compact ? '' : 'に変更'}${icon('chevron-right')}</span>
+      <span class="rec-l">おすすめ</span>${recKeyHTML(rec.key)}<span class="rec-go">${compact ? '' : 'に変更'}${icon('chevron-right')}</span>
     </button>${note}`;
 }
 
@@ -1307,7 +1312,7 @@ function randomRec(s) {
   if (!hasVoice()) return '';
   const rec = recommend(s);
   if (!rec || isRecSetting(s, rec.key)) return '';
-  return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(splitRecKey(rec.key).machine)}">${recKeyText(rec.key)}</b> にする</button>`;
+  return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー ${recKeyHTML(rec.key)} にする</button>`;
 }
 
 const rndMainHTML = (s) => `${randomArt(s, 'rnd-art')}
