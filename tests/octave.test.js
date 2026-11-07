@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeKey, splitKey, toggleOctave, octaveOf, machineKey, parseNote as n } from '../js/notes.js';
+import { describeKey, splitKey, splitRecKey, toggleOctave, octaveOf, machineKey, parseNote as n } from '../js/notes.js';
 import { normalizeSong } from '../js/model.js';
 import { songsToCSV, parseCSV, rowsToSongs } from '../js/csv.js';
 
@@ -29,6 +29,16 @@ test('実際のキーは、機械で設定できる ±7 を超える分だけオ
   assert.deepEqual(splitKey(-8), { octave: -1, machine: 4 });
   assert.deepEqual(splitKey(-12), { octave: -1, machine: 0 });
   assert.deepEqual(splitKey(9), { octave: 1, machine: -3 });
+});
+
+test('おすすめキーは、機械のキーが ±6 を超えるときにオク下・オク上を使う', () => {
+  assert.deepEqual(splitRecKey(-6), { octave: 0, machine: -6 });
+  assert.deepEqual(splitRecKey(-7), { octave: -1, machine: 5 });
+  assert.deepEqual(splitRecKey(-9), { octave: -1, machine: 3 });
+  assert.deepEqual(splitRecKey(6), { octave: 0, machine: 6 });
+  assert.deepEqual(splitRecKey(7), { octave: 1, machine: -5 });
+  assert.equal(describeKey(-7, splitRecKey(-7).octave).text, 'オク下 +5');
+  assert.equal(describeKey(7, splitRecKey(7).octave).text, 'オク上 −5');
 });
 
 test('オクターブの記録がない古いデータは、キーの値から推測する', () => {

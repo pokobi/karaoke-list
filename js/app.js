@@ -1,7 +1,7 @@
 import { FIREBASE_CONFIG, YOUTUBE_API_KEY } from './config.js';
 import {
   RANGE_FIELDS, KEY_MIN, KEY_MAX, isNote, noteName, formatKey, keyTone, clampKey, recommendKey, rangeIssues,
-  splitKey, describeKey, toggleOctave,
+  splitRecKey, describeKey, toggleOctave,
 } from './notes.js';
 import { collator, normalize } from './text.js';
 import {
@@ -139,7 +139,10 @@ const fmtDate = (ms) => {
 const fmtScore = (v) => (v == null ? '' : String(Math.round(v * 1000) / 1000));
 const keyText = (k) => formatKey(k);
 // 実際のキー（原曲からのずれ）を、オク下・オク上つきの表示にする（おすすめキーなど）
-const totalKeyText = (total) => describeKey(total, splitKey(total).octave).text;
+// おすすめキーの表記（機械のキーが ±6 を超えるときはオク下・オク上で出す）
+const recKeyText = (total) => describeKey(total, splitRecKey(total).octave).text;
+// 今のキーの設定が、おすすめキーの設定（実際のキーとオク下・オク上）と同じか
+const isRecSetting = (s, total) => s.key === total && (s.octave || 0) === splitRecKey(total).octave;
 
 // キーの欄（一覧・詳細・フォーム共通）。オク下・オク上のときは 2 段で出す
 function paintKv(el, key, octave) {
@@ -803,8 +806,10 @@ function setKey(id, key, octave) {
 }
 
 // おすすめキーなど「実際のキー」で指定するとき。機械で設定できない分はオク下・オク上に回す
+// 実際のキーで設定する（おすすめキー・原キー）。オク下・オク上はおすすめキーと同じ分け方にする
 function setTotalKey(id, total) {
-  setKey(id, total, splitKey(clampKey(total)).octave);
+  const k = clampKey(total);
+  setKey(id, k, splitRecKey(k).octave);
 }
 
 function toggleOct(id, target) {
@@ -821,11 +826,11 @@ function recommendHTML(s, { compact = false } = {}) {
   const rec = recommend(s);
   if (!rec) return '<p class="rec-note">音域が未入力のため、おすすめキーを計算できません</p>';
   const note = rec.fits ? '' : `<p class="rec-note warn" style="--warn:${warnColor(Math.max(...rec.issues.map((x) => x.by)))}">${icon('alert')}<span>おすすめキーでも、${rec.issues.map(issueText).join('、')}です</span></p>`;
-  if (rec.key === s.key) {
-    return `<div class="rec-ok">${icon('check')}<span>おすすめキー（<b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b>）です</span></div>${note}`;
+  if (isRecSetting(s, rec.key)) {
+    return `<div class="rec-ok">${icon('check')}<span>おすすめキー（<b class="tone-${keyTone(splitRecKey(rec.key).machine)}">${recKeyText(rec.key)}</b>）です</span></div>${note}`;
   }
   return `<button type="button" class="rec-btn" data-k="${rec.key}">
-      <span class="rec-l">おすすめ</span><b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b><span class="rec-go">${compact ? '' : 'に変更'}${icon('chevron-right')}</span>
+      <span class="rec-l">おすすめ</span><b class="tone-${keyTone(splitRecKey(rec.key).machine)}">${recKeyText(rec.key)}</b><span class="rec-go">${compact ? '' : 'に変更'}${icon('chevron-right')}</span>
     </button>${note}`;
 }
 
@@ -1298,8 +1303,8 @@ function randomKeyText(s) {
 function randomRec(s) {
   if (!hasVoice()) return '';
   const rec = recommend(s);
-  if (!rec || rec.key === s.key) return '';
-  return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(splitKey(rec.key).machine)}">${totalKeyText(rec.key)}</b> にする</button>`;
+  if (!rec || isRecSetting(s, rec.key)) return '';
+  return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー <b class="tone-${keyTone(splitRecKey(rec.key).machine)}">${recKeyText(rec.key)}</b> にする</button>`;
 }
 
 const rndMainHTML = (s) => `${randomArt(s, 'rnd-art')}

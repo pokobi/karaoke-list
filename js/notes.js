@@ -81,12 +81,18 @@ export function machineKey(key, octave = 0) {
   return key - 12 * (octave || 0);
 }
 
-// 実際のキーを、機械のキーとオクターブに分ける。機械で設定できる ±7 に収まるときはオクターブを使わない
-export function splitKey(total) {
-  if (total < -MACHINE_KEY_MAX) return { octave: -1, machine: total + 12 };
-  if (total > MACHINE_KEY_MAX) return { octave: 1, machine: total - 12 };
+// 実際のキーを、機械のキーとオクターブに分ける。機械のキーが ±max に収まるときはオクターブを使わない
+// （max の初期値は、機械で設定できる ±7）
+export function splitKey(total, max = MACHINE_KEY_MAX) {
+  if (total < -max) return { octave: -1, machine: total + 12 };
+  if (total > max) return { octave: 1, machine: total - 12 };
   return { octave: 0, machine: total };
 }
+
+// おすすめキーとして出す・設定するときの分け方。機械のキーが ±6 を超えるときは、オク下・オク上を使う
+// （例：−7 は「オク下 +5」。キーを大きく変えると曲の音が歪むため、機械のキーは小さく抑える）
+export const REC_KEY_MAX = 6;
+export const splitRecKey = (total) => splitKey(total, REC_KEY_MAX);
 
 // 保存されたオクターブ。記録がない古いデータは、キーの値から推測する（例：−12 は「オク下 ±0」）
 export function octaveOf(raw, key) {
