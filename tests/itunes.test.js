@@ -65,3 +65,24 @@ test('日本語の曲名の後ろに付いた英語表記だけを外す', () =>
   assert.equal(trimReading('さくら-Sakura'), 'さくら-Sakura');
   assert.equal(trimReading(''), '');
 });
+
+test('アーティストが未入力のときは曲名だけで探し、同じ曲の別の版は 1 つにまとめる', async () => {
+  const { suggestSongsByTitle } = await import('../js/itunes.js');
+  const realFetch = globalThis.fetch;
+  const asked = [];
+  const track = (artistName, trackName) => ({ wrapperType: 'track', kind: 'song', artistName, trackName, collectionName: 'X', artworkUrl100: '' });
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    return { ok: true, json: async () => ({ results: [track('ソラシド', '夜明けのワルツ (Live)'), track('ソラシド', '夜明けのワルツ'), track('Blue Harbor', '夜明けのワルツ')] }) };
+  };
+  try {
+    const r = await suggestSongsByTitle('夜明けのワルツ');
+    assert.deepEqual(r.map((s) => `${s.artist}/${s.title}`), ['ソラシド/夜明けのワルツ', 'Blue Harbor/夜明けのワルツ']);
+    assert.match(decodeURIComponent(asked[0]), /attribute=songTerm/);
+    // 英数字 1 文字では探さない（日本語は 1 文字から探す）
+    assert.deepEqual(await suggestSongsByTitle('a'), []);
+    assert.equal(asked.length, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

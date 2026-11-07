@@ -12,7 +12,7 @@ import {
 import { setNoteStyle, getNoteStyle, fmtNote, fmtNoteHTML } from './display.js';
 import { songsToCSV, parseCSV, rowsToSongs } from './csv.js';
 import { openExternal, installExternalLinks } from './external.js';
-import { suggestArtistsOnline, suggestSongsOnline, songsOfArtist, searchTracks, findTrack, waitForSlot, searchSongs, trimReading } from './itunes.js';
+import { suggestArtistsOnline, suggestSongsOnline, suggestSongsByTitle, songsOfArtist, searchTracks, findTrack, waitForSlot, searchSongs, trimReading } from './itunes.js';
 import {
   MAX_LINES, parseLines, analyzeLine, aliasMap, sanitizeAliases, scoreSongs, mergeCandidates, judge, fallbackTerms,
   guessSong, aliasToLearn, looseKey,
@@ -1027,6 +1027,24 @@ function keepViewState(root) {
   };
 }
 
+// 曲の音域の広さ（最低音から地声・裏声の最高音まで）。キーを変えても変わらない
+function rangeSpanHTML(s) {
+  if (!isNote(s.low)) return '';
+  const fmt = (n) => {
+    const oct = Math.floor(n / 12);
+    const rest = n % 12;
+    const o = oct ? `${oct}オクターブ${rest ? `＋${rest}` : ''}` : '';
+    return `<b>${n}半音</b>${o ? `<span class="d-span-o">（${o}）</span>` : ''}`;
+  };
+  const parts = [];
+  if (isNote(s.chestHigh) && s.chestHigh > s.low) parts.push(`地声 ${fmt(s.chestHigh - s.low)}`);
+  // 裏声最高音が地声最高音より高いときだけ、裏声までの広さも出す
+  if (isNote(s.falsettoHigh) && s.falsettoHigh > s.low && !(isNote(s.chestHigh) && s.falsettoHigh <= s.chestHigh)) {
+    parts.push(`裏声まで ${fmt(s.falsettoHigh - s.low)}`);
+  }
+  return parts.length ? `<p class="d-span"><span class="d-span-l">音域の広さ</span><span class="d-span-v">${parts.join('<span class="d-span-sep">・</span>')}</span></p>` : '';
+}
+
 function detailHTML(s, d) {
   const vo = voice();
   const showVoice = hasVoice();
@@ -1070,6 +1088,7 @@ function detailHTML(s, d) {
         <thead><tr><th></th><th scope="col" class="orig">原曲</th><th scope="col" data-role="cur-head">キー適用後</th>${showVoice ? '<th scope="col">自分</th>' : ''}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
+      ${rangeSpanHTML(s)}
       ${pluginDetailHTML(s)}
       ${rangeActionsHTML('d-ractions', isRangeMissing(s))}
       ${d.preview ? '<section class="d-sec d-pv" data-role="preview"></section>' : ''}
@@ -1935,6 +1954,11 @@ function openForm(song = null) {
   };
   form.artist.addEventListener('change', prefetchSongs);
   const titleSuggest = setupTitleSuggest(form.title, el('#fm-title-list'), () => form.artist.value, (s) => {
+    // 曲名だけで探して選んだときは、アーティスト名も入れる
+    if (!form.artist.value.trim() && s.artist) {
+      form.artist.value = s.artist;
+      prefetchSongs();
+    }
     if (s.artwork) {
       draft.artwork = s.artwork;
       paintArt();
@@ -2264,12 +2288,14 @@ function setupTitleSuggest(input, list, getArtist, onPick) {
   const render = (items, active, pre) => {
     const artist = getArtist().trim();
     const registered = new Set(state.songs.map(dupKey));
-    return '<li class="ac-head" role="presentation">iTunes の候補</li>' + items.map((s, i) => {
+    // アーティストが未入力のときは曲名だけで探すので、候補にアーティスト名も出す
+    const sub = (s) => [artist ? '' : s.artist, s.album].filter(Boolean).map(esc).join(' · ');
+    return `<li class="ac-head" role="presentation">${artist ? 'iTunes の候補' : 'iTunes の候補（曲名で検索）'}</li>` + items.map((s, i) => {
       const title = trimReading(s.title);
-      const done = registered.has(dupKey({ artist, title }));
+      const done = registered.has(dupKey({ artist: artist || s.artist, title }));
       return `<li role="option" id="${pre}-${i}" data-i="${i}" class="song-opt${i === active ? ' active' : ''}" aria-selected="${i === active}">
         <span class="ac-art">${s.artwork ? `<img src="${esc(s.artwork)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon('music')}</span>
-        <span class="ac-text"><span class="ac-name">${highlight(title, input.value)}</span>${s.album ? `<span class="ac-sub">${esc(s.album)}</span>` : ''}</span>
+        <span class="ac-text"><span class="ac-name">${highlight(title, input.value)}</span>${sub(s) ? `<span class="ac-sub">${sub(s)}</span>` : ''}</span>
         ${done ? '<span class="ac-count">登録済み</span>' : ''}</li>`;
     }).join('');
   };
@@ -2277,7 +2303,8 @@ function setupTitleSuggest(input, list, getArtist, onPick) {
     clearTimeout(timer);
     const artist = getArtist().trim();
     const q = input.value.trim();
-    if (!artist || !navigator.onLine) return cb.hide();
+    // アーティストが決まっていればその曲から、未入力なら曲名だけで探す
+    if (!navigator.onLine || (!artist && !q)) return cb.hide();
     const key = `${artist}\u0001${q}`;
     if (key === loadedKey) return cb.show(songs, render, { pin });
     if (!songs.length || pin) cb.message('iTunes で曲を探しています…', { pin });
@@ -2285,7 +2312,9 @@ function setupTitleSuggest(input, list, getArtist, onPick) {
       ctrl?.abort();
       ctrl = new AbortController();
       try {
-        const found = await suggestSongsOnline(artist, q, { signal: ctrl.signal });
+        const found = artist
+          ? await suggestSongsOnline(artist, q, { signal: ctrl.signal })
+          : await suggestSongsByTitle(q, { signal: ctrl.signal });
         if (`${getArtist().trim()}\u0001${input.value.trim()}` !== key) return;
         if (found.length) loadedKey = key;
         songs = found.slice(0, 8);

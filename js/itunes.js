@@ -118,6 +118,32 @@ export async function suggestSongsOnline(artist, titleInput = '', opts) {
   return list;
 }
 
+// アーティストが未入力のときの曲名の候補。曲名で検索し、同じアーティストの同じ曲
+// （ライブ版などの別の版）は 1 つにまとめる（付記のない元の版を残す）。
+// 短すぎる入力では探さない（英数字は 2 文字から、日本語は 1 文字から）
+export async function suggestSongsByTitle(titleInput, opts) {
+  const q = String(titleInput ?? '').trim();
+  if (squash(q).length < (/[^\x00-\x7f]/.test(q) ? 1 : 2)) return [];
+  const songs = await search({ term: q, attribute: 'songTerm', limit: '50' }, opts);
+  if (!songs) return [];
+  const out = [];
+  const index = new Map();
+  for (const s of songs) {
+    const base = baseTitle(s.title);
+    if (!squash(base)) continue;
+    const k = `${squash(s.artist)}\u0001${squash(base)}`;
+    const plain = base === s.title.trim();
+    if (index.has(k)) {
+      const i = index.get(k);
+      if (plain && baseTitle(out[i].title) !== out[i].title.trim()) out[i] = s;
+      continue;
+    }
+    index.set(k, out.length);
+    out.push(s);
+  }
+  return out;
+}
+
 // 検索語でジャケット画像の候補を探す（同じ画像は 1 つにまとめる）
 export async function searchTracks(term, opts) {
   const t = term.trim();
