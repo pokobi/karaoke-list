@@ -531,7 +531,7 @@ function renderList(list) {
 
 function filterCount() {
   const v = state.view;
-  return (v.favoriteOnly ? 1 : 0) + (v.missingRange ? 1 : 0) + (v.artist ? 1 : 0) + v.tags.length
+  return (v.favoriteOnly ? 1 : 0) + (v.missingRange ? 1 : 0) + (v.artist ? 1 : 0) + v.tags.length + v.exTags.length
     + RANGE_FIELDS.filter((f) => isNote(v.range[f.id]?.min) || isNote(v.range[f.id]?.max)).length;
 }
 
@@ -557,6 +557,7 @@ function renderChips() {
   if (v.missingRange) chips.push({ k: 'missing', label: '音域未入力' });
   if (v.artist) chips.push({ k: 'artist', label: esc(v.artist) });
   for (const t of v.tags) chips.push({ k: `tag:${t}`, label: `${icon('tag')}${esc(t)}` });
+  for (const t of v.exTags) chips.push({ k: `extag:${t}`, label: `${icon('tag')}${esc(t)}を除く` });
   for (const f of RANGE_FIELDS) {
     const { min, max } = v.range[f.id] ?? {};
     if (!isNote(min) && !isNote(max)) continue;
@@ -587,6 +588,7 @@ function renderFilterPanel() {
   $('#f-artist').innerHTML = `<option value="">すべてのアーティスト</option>`
     + names.map((n) => `<option value="${esc(n)}"${n === v.artist ? ' selected' : ''}>${esc(n)}（${counts.get(n) ?? 0}）</option>`).join('');
   $('#f-tags').innerHTML = tags.map((t) => `<button type="button" class="chip${v.tags.includes(t) ? ' on' : ''}"${tagC(t)} data-tag="${esc(t)}" aria-pressed="${v.tags.includes(t)}">${esc(t)}</button>`).join('');
+  $('#f-extags').innerHTML = exTagChips(tags, v.exTags);
   $$('#f-basis button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v.basis)));
   $('#f-range').innerHTML = RANGE_FIELDS.map((f) => {
     const { min, max } = v.range[f.id] ?? {};
@@ -632,7 +634,20 @@ function updateView(patch) {
 
 function clearFilters() {
   const d = defaultView();
-  updateView({ favoriteOnly: false, missingRange: false, artist: '', tags: [], range: d.range });
+  updateView({ favoriteOnly: false, missingRange: false, artist: '', tags: [], exTags: [], range: d.range });
+}
+
+// 「除くタグ」のボタン。選ぶと取り消し線を引いた見た目になる
+function exTagChips(tags, exTags) {
+  return tags.map((t) => `<button type="button" class="chip ex${exTags.includes(t) ? ' on' : ''}"${tagC(t)} data-extag="${esc(t)}" aria-pressed="${exTags.includes(t)}" aria-label="${esc(t)}を除く">${esc(t)}</button>`).join('');
+}
+
+// タグの条件を切り替える（cond：tags と exTags を持つ条件）。同じタグを「タグ」と「除くタグ」の両方では選べないので、
+// 片方で選んだら、もう片方からは外す
+function toggleTagCondition(cond, t, ex) {
+  const [key, other] = ex ? ['exTags', 'tags'] : ['tags', 'exTags'];
+  const on = cond[key].includes(t);
+  return { [key]: on ? cond[key].filter((x) => x !== t) : [...cond[key], t], [other]: on ? cond[other] : cond[other].filter((x) => x !== t) };
 }
 
 // ---- 固定の要素のイベント ---------------------------------------------
@@ -691,6 +706,7 @@ function bindStatic() {
     else if (k === 'missing') updateView({ missingRange: false });
     else if (k === 'artist') updateView({ artist: '' });
     else if (k.startsWith('tag:')) updateView({ tags: state.view.tags.filter((t) => t !== k.slice(4)) });
+    else if (k.startsWith('extag:')) updateView({ exTags: state.view.exTags.filter((t) => t !== k.slice(6)) });
     else if (k.startsWith('range:')) updateView({ range: { ...state.view.range, [k.slice(6)]: {} } });
   });
 
@@ -717,10 +733,8 @@ function bindStatic() {
   fp.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.dataset.tag != null) {
-      const t = b.dataset.tag;
-      const tags = state.view.tags.includes(t) ? state.view.tags.filter((x) => x !== t) : [...state.view.tags, t];
-      updateView({ tags });
+    if (b.dataset.tag != null || b.dataset.extag != null) {
+      updateView(toggleTagCondition(state.view, b.dataset.tag ?? b.dataset.extag, b.dataset.extag != null));
     } else if (b.dataset.v) {
       updateView({ basis: b.dataset.v });
     } else if (b.dataset.bound) {
@@ -1168,7 +1182,7 @@ const randomPoolNow = () => randomPool(state.songs, state.random.opts, { voice: 
 
 function hasRandomCondition() {
   const o = state.random.opts;
-  return o.favoriteOnly || o.artists.length > 0 || o.tags.length > 0 || o.fitsVoice || o.excludeDays > 0 || o.preferLessSung || hasRandomRange(o);
+  return o.favoriteOnly || o.artists.length > 0 || o.tags.length > 0 || o.exTags.length > 0 || o.fitsVoice || o.excludeDays > 0 || o.preferLessSung || hasRandomRange(o);
 }
 
 function reroll() {
@@ -1366,6 +1380,7 @@ function randomSummary() {
   if (o.favoriteOnly) parts.push('お気に入り');
   if (o.artists.length) parts.push(o.artists.length === 1 ? o.artists[0] : `${o.artists[0]} ほか${o.artists.length - 1}組`);
   if (o.tags.length) parts.push(o.tags.join('・'));
+  if (o.exTags.length) parts.push(`${o.exTags.join('・')}を除く`);
   if (o.fitsVoice) parts.push(o.fitsMode === 'current' ? '今のキーで歌える' : '歌える曲');
   if (o.excludeDays) parts.push(`${o.excludeDays}日以内に歌った曲を除く`);
   if (o.preferLessSung) parts.push('歌っていない曲を優先');
@@ -1390,6 +1405,10 @@ function paintRandomConditions() {
     <div class="fp-sec">
       <span class="label">タグ</span>
       <div class="chip-set">${tags.map((t) => `<button type="button" class="chip${o.tags.includes(t) ? ' on' : ''}"${tagC(t)} data-tag="${esc(t)}" aria-pressed="${o.tags.includes(t)}">${esc(t)}</button>`).join('')}</div>
+    </div>
+    <div class="fp-sec">
+      <span class="label">除くタグ</span>
+      <div class="chip-set">${exTagChips(tags, o.exTags)}</div>
     </div>
     <div class="fp-sec">
       <label class="switch-row"><span>自分の音域で歌える曲だけ</span><input type="checkbox" class="switch" data-opt="fitsVoice"${o.fitsVoice && voiceOk ? ' checked' : ''}${voiceOk ? '' : ' disabled'}></label>
@@ -1453,9 +1472,8 @@ async function onRandomClick(e) {
   } else if (b.dataset.artist != null) {
     const n = b.dataset.artist;
     updateRandom({ artists: o.artists.includes(n) ? o.artists.filter((x) => x !== n) : [...o.artists, n] });
-  } else if (b.dataset.tag != null) {
-    const t = b.dataset.tag;
-    updateRandom({ tags: o.tags.includes(t) ? o.tags.filter((x) => x !== t) : [...o.tags, t] });
+  } else if (b.dataset.tag != null || b.dataset.extag != null) {
+    updateRandom(toggleTagCondition(o, b.dataset.tag ?? b.dataset.extag, b.dataset.extag != null));
   } else if (b.dataset.mode) {
     updateRandom({ fitsMode: b.dataset.mode, fitsVoice: true });
   } else if (b.dataset.days != null) {
@@ -3902,10 +3920,11 @@ function ensureTags(names) {
 
 function replaceTagInConditions(oldName, newName) {
   const swap = (list) => [...new Set(list.flatMap((t) => (t === oldName ? (newName ? [newName] : []) : [t])))];
-  if (state.view.tags.includes(oldName)) updateView({ tags: swap(state.view.tags) });
+  const v = state.view;
+  if (v.tags.includes(oldName) || v.exTags.includes(oldName)) updateView({ tags: swap(v.tags), exTags: swap(v.exTags) });
   const ro = state.random.opts;
-  if (ro?.tags.includes(oldName)) {
-    state.random.opts = { ...ro, tags: swap(ro.tags) };
+  if (ro?.tags.includes(oldName) || ro?.exTags.includes(oldName)) {
+    state.random.opts = { ...ro, tags: swap(ro.tags), exTags: swap(ro.exTags) };
     saveRandomOptions();
   }
 }

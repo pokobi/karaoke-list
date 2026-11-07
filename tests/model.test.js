@@ -26,6 +26,13 @@ test('アーティスト・タグ・お気に入りで絞り込める', () => {
   assert.deepEqual(applyView(songs, view({ favoriteOnly: true }), '').map((s) => s.id), ['b']);
 });
 
+test('除くタグが付いている曲は一覧に出さない', () => {
+  assert.deepEqual(applyView(songs, view({ exTags: ['バラード'] }), '').map((s) => s.id).sort(), ['b', 'c', 'd']);
+  assert.deepEqual(applyView(songs, view({ artist: 'ソラシド', exTags: ['バラード'] }), '').map((s) => s.id), ['c']);
+  assert.deepEqual(sanitizeView({ exTags: ['バラード', 1] }).exTags, ['バラード']);
+  assert.deepEqual(sanitizeView({}).exTags, []);
+});
+
 test('音域の絞り込みはキー適用後と原曲を切り替えられる', () => {
   const range = { low: {}, chestHigh: { max: n('mid2G#') }, falsettoHigh: {} };
   // a は hiA だが -3 で mid2F# になる

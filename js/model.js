@@ -86,6 +86,7 @@ export function defaultView() {
     missingRange: false,
     artist: '',
     tags: [],
+    exTags: [], // 除くタグ（どれか 1 つでも付いている曲は出さない）
     range: { low: {}, chestHigh: {}, falsettoHigh: {} },
     basis: 'current',
     sortBy: 'createdAt',
@@ -107,6 +108,7 @@ export function sanitizeView(v) {
     missingRange: v.missingRange === true,
     artist: typeof v.artist === 'string' ? v.artist : '',
     tags: Array.isArray(v.tags) ? v.tags.filter((t) => typeof t === 'string') : [],
+    exTags: Array.isArray(v.exTags) ? v.exTags.filter((t) => typeof t === 'string') : [],
     range,
     basis: v.basis === 'original' ? 'original' : 'current',
     sortBy: SORTS.some((s) => s.id === v.sortBy) ? v.sortBy : d.sortBy,
@@ -130,6 +132,7 @@ export function matches(song, view, terms) {
   if (view.missingRange && !isRangeMissing(song)) return false;
   if (view.artist && song.artist !== view.artist) return false;
   if (view.tags.length && !view.tags.some((t) => song.tags.includes(t))) return false;
+  if (view.exTags?.length && view.exTags.some((t) => song.tags.includes(t))) return false;
   for (const f of RANGE_FIELDS) {
     const { min, max } = view.range[f.id] ?? {};
     const hasMin = isNote(min);

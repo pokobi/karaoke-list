@@ -234,6 +234,8 @@ textarea.input { resize: vertical; min-height: 84px; }
 }
 .chip.on { background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
 .chip.static { height: 26px; font-size: 12.5px; padding: 0 10px; cursor: default; }
+/* 除くタグ：選ぶと、取り消し線を引いて注意の色にする（タグの色より優先） */
+.chip.ex.on, .chip[data-c].ex.on { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); text-decoration: line-through; text-decoration-thickness: 1.5px; }
 
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-weight: 600; font-size: 15px; cursor: pointer; }
 .switch {
@@ -334,6 +336,9 @@ textarea.input { resize: vertical; min-height: 84px; }
 .tool-btn .ic { width: 17px; height: 17px; }
 .tool-btn:active, .tool-btn[aria-expanded="true"] { background: var(--surface-3); }
 .tool-btn.icon-only { width: 32px; padding: 0; justify-content: center; }
+/* ランダム選曲はよく使うので、ほかの道具より少しだけ目立たせる */
+#btn-random { color: var(--accent); background: var(--accent-weak); margin-left: 2px; }
+#btn-random:active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 
 .active-chips { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0 2px; margin: 0 calc(-1 * var(--gutter)); padding-left: var(--gutter); padding-right: var(--gutter); scrollbar-width: none; }
 .active-chips::-webkit-scrollbar { display: none; }

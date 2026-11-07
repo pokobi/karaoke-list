@@ -23,6 +23,15 @@ test('アーティスト・タグ・お気に入りで絞る', () => {
   assert.equal(ids(randomPool(songs, opts({ favoriteOnly: true }))), 'a');
 });
 
+test('除くタグが 1 つでも付いている曲は選ばない', () => {
+  assert.equal(ids(randomPool(songs, opts({ exTags: ['練習中'] }))), 'bcd');
+  assert.equal(ids(randomPool(songs, opts({ exTags: ['練習中', 'バラード'] }))), 'bd');
+  // 「タグ」と組み合わせる
+  assert.equal(ids(randomPool(songs, opts({ artists: ['ソラシド'], exTags: ['練習中'] }))), 'b');
+  assert.deepEqual(sanitizeRandomOptions({ exTags: ['練習中', 3] }).exTags, ['練習中']);
+  assert.deepEqual(sanitizeRandomOptions({}).exTags, []);
+});
+
 test('最近歌った曲を除く', () => {
   assert.equal(ids(randomPool(songs, opts({ excludeDays: 7 }), { now })), 'bcd');
   assert.equal(ids(randomPool(songs, opts({ excludeDays: 30 }), { now })), 'bc');

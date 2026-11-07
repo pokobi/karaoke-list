@@ -9,6 +9,7 @@ export function defaultRandomOptions() {
   return {
     artists: [],
     tags: [],
+    exTags: [], // 除くタグ（どれか 1 つでも付いている曲は選ばない）
     favoriteOnly: false,
     fitsVoice: false,
     fitsMode: 'recommend', // recommend：おすすめキーにすれば収まる / current：今のキーで収まる
@@ -30,6 +31,7 @@ export function sanitizeRandomOptions(o) {
   return {
     artists: strings(o.artists),
     tags: strings(o.tags),
+    exTags: strings(o.exTags),
     favoriteOnly: o.favoriteOnly === true,
     fitsVoice: o.fitsVoice === true,
     fitsMode: o.fitsMode === 'current' ? 'current' : 'recommend',
@@ -82,6 +84,7 @@ export function randomPool(songs, o, { voice, now = Date.now(), offset = 2, allo
     if (o.favoriteOnly && !s.favorite) return false;
     if (o.artists.length && !o.artists.includes(s.artist)) return false;
     if (o.tags.length && !o.tags.some((t) => s.tags.includes(t))) return false;
+    if (o.exTags?.length && o.exTags.some((t) => s.tags.includes(t))) return false;
     if (o.excludeDays && s.lastSungAt && now - s.lastSungAt < o.excludeDays * DAY) return false;
     if (o.fitsVoice && !fitsVoice(s, voice, o.fitsMode, offset, allowUp)) return false;
     if (!inRange(s, o.range)) return false;
