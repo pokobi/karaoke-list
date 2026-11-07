@@ -1239,6 +1239,41 @@ textarea.input { resize: vertical; min-height: 84px; }
   .d-rec { margin-top: 10px; }
   .d-span { margin-bottom: 12px; }
 }
+/* マイクで音域を測る */
+.vm-open { margin-top: 10px; }
+.vm-steps { display: flex; gap: 4px; list-style: none; margin: 0 0 16px; padding: 0; counter-reset: vm; }
+.vm-steps li { flex: 1; min-width: 0; padding-top: 7px; border-top: 3px solid var(--line); font-size: 11.5px; font-weight: 600; color: var(--text-3); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vm-steps li.done { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--text-2); }
+.vm-steps li.on { border-color: var(--accent); color: var(--accent); }
+.vm-title { margin: 0 0 6px; font-size: 16px; }
+.vm-lead { margin: 0 0 14px; font-size: 14px; color: var(--text-2); line-height: 1.6; }
+.vm-notes { margin: 0 0 12px; padding-left: 1.2em; font-size: 13px; color: var(--text-2); line-height: 1.7; }
+.vm-error { margin: 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); font-size: 13px; }
+.vm-live { display: grid; justify-items: center; gap: 8px; padding: 18px 14px 16px; border-radius: 16px; background: var(--surface-2); }
+.vm-live-l { font-size: 12px; font-weight: 600; color: var(--text-3); }
+.vm-now { font-size: 40px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; min-height: 44px; }
+.vm-now .sci { font-size: 16px; }
+.vm-hold, .vm-level { width: min(220px, 80%); height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+.vm-hold span, .vm-level span { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--accent); transition: width .08s linear; }
+.vm-level { height: 3px; }
+.vm-level span { background: var(--text-3); }
+.vm-best { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; }
+.vm-best-l { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.vm-best-v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.vm-results { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.vm-res { display: flex; align-items: center; gap: 8px; padding: 12px 14px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.vm-res + .vm-res { border-top: 1px solid var(--line); }
+.vm-res input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+.vm-res-l { flex: 1; font-size: 14px; font-weight: 600; }
+.vm-res-old { font-size: 14px; color: var(--text-3); }
+.vm-res .ic { width: 14px; height: 14px; color: var(--text-3); }
+.vm-res-new { min-width: 4.5em; font-size: 16px; font-weight: 800; text-align: right; }
+.vm-res.none { cursor: default; }
+.vm-res.none .vm-res-new { font-size: 12.5px; font-weight: 500; color: var(--text-3); }
+.vm-foot { gap: 8px; }
+.vm-foot .btn.primary { flex: 1; }
+.vm-foot .btn.wide { flex: 1; }
+
 /* 試聴の下に回したとき：表の下に置くときと同じく、上の部品との間を空ける（中の部品は上の余白を詰めているため） */
 .d-rinfo-after { padding-top: 8px; }
 

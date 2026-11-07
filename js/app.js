@@ -27,6 +27,7 @@ import { sanitizeHaptics, hapticMode, playHaptic } from './haptics.js';
 import { RANDOM_FX, sanitizeRandomFx, playRandomFx } from './random-fx.js';
 import { previewSupported, createPreview, audioFiles, formatBytes, FILE_ACCEPT, MAX_FILE_BYTES } from './preview.js';
 import { readTags, matchFile } from './audio-match.js';
+import { detectPitch, hzToNoteValue, inNoteRange, createRangeTracker } from './pitch-detect.js';
 import { MAX_TABLE_ROWS, decodeText, parseTable, detectColumns, tableToItems, sourceName } from './table-import.js';
 import { findPlaylistIds, isPlaylistLine, fetchPlaylist, fetchVideos, videoToSong } from './youtube.js';
 import { itunesPreviewSource } from './itunes-preview.js';
@@ -3770,7 +3771,8 @@ function paintSettings() {
         <div class="note-fields">
           ${RANGE_FIELDS.map((f) => `<button type="button" class="note-field${isNote(vo[f.id]) ? ' set' : ''}" data-voice="${f.id}"><span class="nf-l">${f.label}</span><span class="nf-v">${isNote(vo[f.id]) ? fmtNoteHTML(vo[f.id]) : '未選択'}</span></button>`).join('')}
         </div>
-        <p class="hint">登録すると、曲ごとに「おすすめキー」を表示します。</p>
+        <button type="button" class="btn wide vm-open" data-act="voice-measure">${icon('mic')}マイクで測る</button>
+        <p class="hint">登録すると、曲ごとに「おすすめキー」を表示します。マイクで声を出して測ることもできます。</p>
         <span class="set-label">おすすめキーの余裕</span>
         ${seg('offset', REC_OFFSETS.map((m) => [m, m ? `−${m}半音` : 'ちょうど']), p.recOffset)}
         <p class="hint">おすすめキーは、曲の地声最高音が、自分の地声最高音よりこの分だけ低くなるキーです。そのキーでも最低音や裏声最高音が自分の音域を超えるときは、注意を表示します。</p>
@@ -3885,6 +3887,7 @@ async function onSettingsClick(e) {
     case 'close': state.settings.close(); break;
     case 'artists': openArtists(); break;
     case 'tags': openTagManager(); break;
+    case 'voice-measure': openVoiceMeasure(); break;
     case 'export': exportCSV(); break;
     case 'import': $('#csv-file').click(); break;
     case 'art-run': runArtJob(); break;
@@ -4025,6 +4028,216 @@ function updateAccountPrefs(patch) {
   paintSettings();
   paintRandom();
   state.store.updateProfile({ prefs: next });
+}
+
+// ---- マイクで自分の音域を測る ----------------------------------------------
+// 最低音 → 地声最高音 → 裏声最高音 の順に、同じ高さで少し伸ばした音のうち、いちばん低い・高い音を記録する。
+// 音はこの端末の中で高さを調べるだけで、録音も送信もしない
+
+const MEASURE_STEPS = [
+  { id: 'low', mode: 'low', title: '最低音', hint: '地声で、出せるいちばん低い声を「あー」と伸ばしてください。少しずつ下げていくと測りやすいです。' },
+  { id: 'chestHigh', mode: 'high', title: '地声最高音', hint: '地声のまま、出せるいちばん高い声を伸ばしてください。少しずつ上げていきましょう。無理はしないでください。' },
+  { id: 'falsettoHigh', mode: 'high', title: '裏声最高音', hint: '裏声で、出せるいちばん高い声を伸ばしてください。裏声を使わないときは、測らずに次へ進めます。' },
+];
+const MEASURE_HOLD_MS = 400; // 同じ高さでこれだけ伸ばした音だけを記録する
+const MEASURE_CLARITY = 0.85; // これよりはっきりしない音（息・雑音）は使わない
+
+const measureSupported = () => !!navigator.mediaDevices?.getUserMedia && !!(window.AudioContext || window.webkitAudioContext);
+
+function openVoiceMeasure() {
+  const m = { step: -1, results: {}, mic: null, tracker: null, timer: 0, recent: [] };
+  const sheet = openSheet(`<div class="vm">
+      <div class="sheet-head"><h3>マイクで音域を測る</h3><button type="button" class="icon-btn" data-act="close" aria-label="閉じる">${icon('close')}</button></div>
+      <div class="sheet-body" data-role="stage"></div>
+      <div class="sheet-foot vm-foot" data-role="foot"></div>
+    </div>`, { label: 'マイクで音域を測る', className: 'vm-layer', onClose: () => stopMic() });
+  const stage = $('[data-role="stage"]', sheet.el);
+  const foot = $('[data-role="foot"]', sheet.el);
+
+  function stopMic() {
+    clearInterval(m.timer);
+    m.timer = 0;
+    m.mic?.stream.getTracks().forEach((t) => t.stop());
+    m.mic?.ctx.close().catch(() => {});
+    m.mic = null;
+  }
+
+  async function startMic() {
+    // iPhone などでは、ボタンを押した直後（待つ前）に作らないと音の処理が始まらないため、先に作る
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    } catch (err) {
+      ctx.close().catch(() => {});
+      throw err;
+    }
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    // スピーカーにはつながない（自分の声が聞こえたり、ハウリングしたりしないように）
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    m.mic = { stream, ctx, analyser, buf: new Float32Array(analyser.fftSize) };
+  }
+
+  const stepsHTML = () => `<ol class="vm-steps">${MEASURE_STEPS.map((s, i) => `<li class="${i === m.step ? 'on' : i < m.step || m.step === MEASURE_STEPS.length ? 'done' : ''}">${s.title}</li>`).join('')}<li class="${m.step === MEASURE_STEPS.length ? 'on' : ''}">確認</li></ol>`;
+
+  function paintIntro(error = '') {
+    m.step = -1;
+    stage.innerHTML = `${stepsHTML()}
+      <p class="vm-lead">最低音・地声の最高音・裏声の最高音の順に、声を出して測ります。</p>
+      <ul class="vm-notes">
+        <li>同じ高さで少し（${MEASURE_HOLD_MS / 1000}秒ほど）伸ばした音だけを記録します。一瞬出ただけの音は記録しません。</li>
+        <li>静かな場所で、スマホのマイクに向かって「あー」と声を出してください。</li>
+        <li>音はこの端末の中で高さを調べるだけで、録音や送信はしません。</li>
+      </ul>
+      ${error ? `<p class="vm-error">${esc(error)}</p>` : ''}`;
+    foot.innerHTML = measureSupported()
+      ? `<button type="button" class="btn primary wide" data-act="start">${icon('mic')}マイクを使って始める</button>`
+      : '<p class="hint">この端末・ブラウザでは、マイクを使えません。</p>';
+  }
+
+  function paintStep() {
+    const s = MEASURE_STEPS[m.step];
+    stage.innerHTML = `${stepsHTML()}
+      <h4 class="vm-title">${s.title}を測る</h4>
+      <p class="vm-lead">${s.hint}</p>
+      <div class="vm-live">
+        <span class="vm-live-l">いまの音</span>
+        <span class="vm-now" data-role="now">—</span>
+        <span class="vm-hold" aria-hidden="true"><span data-role="hold"></span></span>
+        <span class="vm-level" aria-hidden="true"><span data-role="level"></span></span>
+      </div>
+      <div class="vm-best"><span class="vm-best-l">記録した${s.title}</span><span class="vm-best-v" data-role="best">まだありません</span></div>`;
+    paintStepFoot();
+  }
+
+  function paintStepFoot() {
+    const best = m.tracker?.best;
+    foot.innerHTML = `<button type="button" class="btn" data-act="back">${m.step ? '戻る' : 'やめる'}</button>`
+      + `<button type="button" class="btn" data-act="redo"${best == null ? ' disabled' : ''}>やり直す</button>`
+      + `<button type="button" class="btn primary" data-act="next">${best == null ? '測らずに次へ' : '次へ'}</button>`;
+  }
+
+  function goStep(i) {
+    m.step = i;
+    m.recent = [];
+    if (i >= MEASURE_STEPS.length) {
+      paintResult();
+      return;
+    }
+    const s = MEASURE_STEPS[i];
+    m.tracker = createRangeTracker({ mode: s.mode, holdMs: MEASURE_HOLD_MS });
+    paintStep();
+  }
+
+  // 声の高さを調べて、画面に出す（1 秒に 25 回ほど）
+  function tick() {
+    if (!m.mic || m.step < 0 || m.step >= MEASURE_STEPS.length) return;
+    const { analyser, buf, ctx } = m.mic;
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const rms = Math.sqrt(sum / buf.length);
+    const p = detectPitch(buf, ctx.sampleRate);
+    let v = p && p.clarity >= MEASURE_CLARITY ? hzToNoteValue(p.hz) : null;
+    if (!inNoteRange(v)) v = null;
+    // 直近 3 回の中央値にして、一瞬の取り違え（1 オクターブずれなど）をならす
+    m.recent.push(v);
+    if (m.recent.length > 3) m.recent.shift();
+    const vals = m.recent.filter((x) => x != null).sort((a, b) => a - b);
+    const smooth = vals.length >= 2 ? vals[Math.floor(vals.length / 2)] : null;
+    const before = m.tracker.best;
+    const r = m.tracker.feed(smooth, performance.now());
+    const now = $('[data-role="now"]', stage);
+    if (!now) return;
+    now.innerHTML = r.note != null ? fmtNoteHTML(r.note) : '—';
+    $('[data-role="hold"]', stage).style.width = `${Math.round(r.held * 100)}%`;
+    $('[data-role="level"]', stage).style.width = `${Math.min(100, Math.round(rms * 400))}%`;
+    if (r.best !== before) {
+      $('[data-role="best"]', stage).innerHTML = fmtNoteHTML(r.best);
+      haptic('key');
+      paintStepFoot();
+    }
+  }
+
+  function paintResult() {
+    const vo = voice();
+    const rows = MEASURE_STEPS.map((s) => {
+      const v = m.results[s.id];
+      return `<label class="vm-res${isNote(v) ? '' : ' none'}">
+          <input type="checkbox" data-field="${s.id}"${isNote(v) ? ' checked' : ' disabled'}>
+          <span class="vm-res-l">${s.title}</span>
+          <span class="vm-res-old">${isNote(vo[s.id]) ? fmtNoteHTML(vo[s.id]) : '未選択'}</span>
+          ${icon('chevron-right')}
+          <span class="vm-res-new">${isNote(v) ? fmtNoteHTML(v) : '測っていません'}</span>
+        </label>`;
+    }).join('');
+    stage.innerHTML = `${stepsHTML()}
+      <h4 class="vm-title">測った結果</h4>
+      <p class="vm-lead">保存する項目にチェックを付けてください。今の値（左）を、測った値（右）に置き換えます。</p>
+      <div class="vm-results">${rows}</div>`;
+    const paint = () => {
+      const n = $$('input[data-field]:checked', stage).length;
+      foot.innerHTML = `<button type="button" class="btn" data-act="restart">測り直す</button>`
+        + `<button type="button" class="btn primary" data-act="save"${n ? '' : ' disabled'}>保存する</button>`;
+    };
+    stage.onchange = paint;
+    paint();
+  }
+
+  sheet.el.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    switch (b.dataset.act) {
+      case 'close': sheet.close(); break;
+      case 'start':
+        b.disabled = true;
+        try {
+          await startMic();
+        } catch (err) {
+          console.warn('mic', err);
+          paintIntro(err?.name === 'NotAllowedError'
+            ? 'マイクを使えませんでした。ブラウザやアプリの設定で、マイクの使用を許可してください。'
+            : 'マイクを使えませんでした。ほかのアプリがマイクを使っていないか確認してください。');
+          return;
+        }
+        m.timer = setInterval(tick, 40);
+        goStep(0);
+        break;
+      case 'redo':
+        m.tracker?.reset();
+        paintStep();
+        break;
+      case 'back':
+        if (m.step <= 0) sheet.close();
+        else goStep(m.step - 1);
+        break;
+      case 'next': {
+        const s = MEASURE_STEPS[m.step];
+        if (m.tracker?.best != null) m.results[s.id] = m.tracker.best;
+        else delete m.results[s.id];
+        goStep(m.step + 1);
+        break;
+      }
+      case 'restart':
+        m.results = {};
+        goStep(0);
+        break;
+      case 'save': {
+        const picked = {};
+        for (const c of $$('input[data-field]:checked', stage)) picked[c.dataset.field] = m.results[c.dataset.field];
+        if (!Object.keys(picked).length) return;
+        state.store.updateProfile({ range: { ...voice(), ...picked } });
+        sheet.close();
+        toast('自分の音域を保存しました');
+        break;
+      }
+      default:
+    }
+  });
+  paintIntro();
 }
 
 // ---- タグ -------------------------------------------------------------
