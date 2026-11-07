@@ -400,7 +400,8 @@ function createItem(id) {
     <span class="art" aria-hidden="true">${icon('music')}<img alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" hidden></span>
     <button type="button" class="song-main">
       <span class="song-title">${icon('star-fill', 'fav')}<span class="t"></span></span>
-      <span class="song-sub"><span class="a"></span><span class="cnt" hidden><span class="vh">歌った回数</span>${icon('mic')}<span class="cn"></span><span class="vh">回</span></span><span class="tags"></span></span>
+      <span class="song-sub"><span class="a"></span><span class="cnt" hidden><span class="vh">歌った回数</span>${icon('mic')}<span class="cn"></span><span class="vh">回</span></span></span>
+      <span class="song-tags" hidden></span>
     </button>
     <div class="range" role="group" aria-label="音域">
       ${RANGE_FIELDS.map((f) => `<div class="rc"><span class="rl">${f.short}</span><span class="rv"></span><span class="vh rw"></span></div>`).join('')}
@@ -421,7 +422,7 @@ function createItem(id) {
     art,
     t: $('.t', el),
     a: $('.a', el),
-    tags: $('.tags', el),
+    tags: $('.song-tags', el),
     cnt: $('.cnt', el),
     cn: $('.cn', el),
     fav: $('.fav', el),
@@ -459,8 +460,9 @@ function updateItem(it, s, tagOrder) {
   it.cn.textContent = s.singCount ? String(s.singCount) : '';
   it.fav.style.display = s.favorite ? '' : 'none';
   it.swR.textContent = s.favorite ? '解除' : 'お気に入り';
-  const shown = tags.slice(0, 2);
-  it.tags.innerHTML = shown.map((t) => `<span class="tag"${tagC(t)}>${esc(t)}</span>`).join('') + (tags.length > 2 ? `<span class="tag more">+${tags.length - 2}</span>` : '');
+  // タグはアーティスト名の下の行に並べる（入りきらない分は右端で薄く消える）
+  it.tags.hidden = !tags.length;
+  it.tags.innerHTML = tags.map((t) => `<span class="tag"${tagC(t)}>${esc(t)}</span>`).join('');
   // 今のキーで自分の音域を超える音は、行に色を付ける（詳細画面の注意の印と同じ色）
   const issues = hasVoice() ? rangeIssues(s, vo, s.key) : [];
   RANGE_FIELDS.forEach((f, i) => {
