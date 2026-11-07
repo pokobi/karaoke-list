@@ -283,6 +283,8 @@ export function sanitizePrefs(p) {
     recOffset: REC_OFFSETS.includes(o.recOffset) ? o.recOffset : DEFAULT_REC_OFFSET,
     // 原曲より高くするおすすめキーも出すか（オフのときは、原キーをすすめる）
     recUp: o.recUp !== false,
+    // 追加した曲の音域を、追加機能（js/plugins.js）で自動で補うか
+    rangeAuto: o.rangeAuto !== false,
   };
 }
 

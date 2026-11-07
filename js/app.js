@@ -122,6 +122,8 @@ const voice = () => state.profile.range ?? {};
 const hasVoice = () => RANGE_FIELDS.some((f) => isNote(voice()[f.id]));
 const recOffset = () => state.profile.prefs?.recOffset ?? 2;
 const recUp = () => state.profile.prefs?.recUp !== false;
+// 追加した曲の音域を、追加機能で自動で補うか（追加機能がないときは使わない）
+const rangeAuto = () => state.profile.prefs?.rangeAuto !== false;
 const recommend = (s) => recommendKey(s, voice(), { offset: recOffset(), allowUp: recUp() });
 
 // 自分の音域を超える音の説明（例：「裏声最高音が1半音高い」）
@@ -1755,11 +1757,12 @@ const rangeBatchCtx = {
     if (state.byId.has(id)) openDetail(id);
   },
 };
-function runRangeBatch(items) {
+// opts.quiet：始めたことをトーストで知らせない（1曲だけ登録したときなど）
+function runRangeBatch(items, opts = {}) {
   if (!items.length) return;
   for (const b of rangeBatches()) {
     try {
-      b.run(items, rangeBatchCtx);
+      b.run(items, rangeBatchCtx, opts);
     } catch (err) {
       console.error(err);
     }
@@ -2114,6 +2117,8 @@ function openForm(song = null) {
       state.store.updateSong(song.id, toPayload(data));
     }
     if (!data.artwork) autoArtwork(id, artist, title);
+    // 音域を入れずに登録した曲は、追加機能で音域を補う
+    if (isNew && isRangeMissing(data) && rangeAuto()) runRangeBatch([{ id, artist, title }], { quiet: true });
     if (!state.profile.artists.includes(artist)) state.store.addArtists([artist]);
     if (data.tags.length) ensureTags(data.tags);
     toast(isNew ? `登録しました：${title}` : '保存しました');
@@ -2775,7 +2780,7 @@ function openReadingCleanup() {
     toast(`${list.length}曲の曲名から英語表記を外しました`);
     // 音域が未入力の曲は、曲名が変わったのを待ってから、追加機能で音域を補う
     const missing = list.filter((x) => isRangeMissing(state.byId.get(x.id) ?? {}));
-    if (!missing.length || !rangeBatches().length) return;
+    if (!missing.length || !rangeBatches().length || !rangeAuto()) return;
     for (let t = 0; t < 30 && !missing.every((x) => state.byId.get(x.id)?.title === x.to); t++) await sleep(100);
     runRangeBatch(missing.map((x) => ({ id: x.id, artist: x.artist, title: x.to })));
   });
@@ -2788,6 +2793,8 @@ function rangeBatchSettingsHTML() {
   const n = state.songs.filter(isRangeMissing).length;
   return `<section class="set-sec">
         <h4>音域の取り込み</h4>
+        <label class="switch-row"><span>追加した曲の音域を自動で取り込む</span><input type="checkbox" class="switch" data-role="range-auto"${rangeAuto() ? ' checked' : ''}></label>
+        <p class="hint">＋から登録した曲や、テキストからまとめて追加した曲の音域を、追加した直後に取り込みます。曲名から英語表記を外した曲も、音域が未入力なら取り込みます。音域を入力して登録した曲はそのままです。</p>
         <button type="button" class="btn wide" data-act="range-batch"${n ? '' : ' disabled'}>${icon('search')}${esc(b.label)}（${n}曲）</button>
         ${b.hint ? `<p class="hint">${esc(b.hint)}</p>` : ''}
       </section>`;
@@ -3539,7 +3546,7 @@ function openTextImport() {
       data: toPayload(normalizeSong({ ...emptySong(), artist: r.artist, title: r.title, artwork: r.artwork, createdAt: now - i, updatedAt: now })),
     }));
     state.store.putSongs(entries);
-    runRangeBatch(entries.map((e) => ({ id: e.id, artist: e.data.artist, title: e.data.title })));
+    if (rangeAuto()) runRangeBatch(entries.map((e) => ({ id: e.id, artist: e.data.artist, title: e.data.title })));
     const artists = [...new Set(picks.map((r) => r.artist).filter(Boolean))].filter((n) => !state.profile.artists.includes(n));
     if (artists.length) state.store.addArtists(artists);
     // 行に書いた略称と、選んだアーティスト名を覚えて、次から使う
@@ -3713,6 +3720,7 @@ function openSettings() {
     }
     if (e.target.dataset.role === 'swipe') setDevicePref({ swipe: e.target.checked });
     if (e.target.dataset.role === 'rec-up') updateAccountPrefs({ recUp: e.target.checked });
+    if (e.target.dataset.role === 'range-auto') updateAccountPrefs({ rangeAuto: e.target.checked });
     if (e.target.dataset.role === 'hap-on') setHaptics({ on: e.target.checked });
   });
 }

@@ -12,11 +12,13 @@
 //     },
 //     // 曲の詳細画面で、音域の表の下に足す HTML
 //     detailHTML?(song): string,
-//     // 曲の音域をまとめて補う（テキストからまとめて追加した直後と、設定の「音域の取り込み」から呼ぶ）
+//     // 曲の音域をまとめて補う。設定の「音域の取り込み」のボタンと、曲を追加した直後（＋からの登録、
+//     // テキストからのまとめて追加など。設定の「追加した曲の音域を自動で取り込む」がオンのとき）に呼ぶ
 //     rangeBatch?: {
 //       label: string,   // 設定のボタンの名前
 //       hint?: string,   // 設定のボタンの下の説明
-//       run(items, ctx): void,  // items：[{ id, artist, title }]。待たずに戻ってよい（画面の表示も追加機能が持つ）
+//       run(items, ctx, opts): void,  // items：[{ id, artist, title }]。待たずに戻ってよい（画面の表示も追加機能が持つ）
+//                                     // opts.quiet：始めたことを知らせなくてよい（1曲だけ登録したときなど）
 //     },
 //     // YouTube Data API のキー（js/config.js の YOUTUBE_API_KEY の代わりに使う）
 //     youtubeApiKey?: string,
