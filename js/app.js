@@ -1322,12 +1322,15 @@ function randomKeyText(s) {
   return d.oct ? `${d.text}（実際 ${d.actual}）` : d.text;
 }
 
-function randomRec(s) {
+// おすすめキーは、押し間違えないようにボタンにはせず、文字だけで出す（変えるときは詳細画面から）
+function randomRecText(s) {
   if (!hasVoice()) return '';
   const rec = recommend(s);
   if (!rec || isRecSetting(s, rec.key)) return '';
-  return `<button type="button" class="pill rnd-rec" data-rec="${esc(s.id)}" data-k="${rec.key}">おすすめキー ${recKeyHTML(rec.key)} にする</button>`;
+  return `<span class="rnd-rec-t">おすすめ ${recKeyHTML(rec.key)}</span>`;
 }
+
+const rndSungBtn = (s, cls = '') => `<button type="button" class="btn btn-sung${cls}" data-sung="${esc(s.id)}">${icon('mic')}歌った！</button>`;
 
 const rndMainHTML = (s) => `${randomArt(s, 'rnd-art')}
   <span class="rnd-text"><span class="rnd-title">${esc(s.title)}</span><span class="rnd-artist">${esc(s.artist)}</span></span>`;
@@ -1358,17 +1361,16 @@ function paintRandomResults(poolSize) {
     const s = picks[0];
     box.innerHTML = `<div class="rnd-card">
       <button type="button" class="rnd-main" data-open="${esc(s.id)}">${rndMainHTML(s)}</button>
-      <div class="rnd-info"><span class="rnd-key" data-tone="${keyTone(describeKey(s.key, s.octave).machine)}">キー ${randomKeyText(s)}</span><span class="rnd-range">${rangeText(s)}</span></div>
-      ${randomRec(s)}
+      <div class="rnd-info"><span class="rnd-key" data-tone="${keyTone(describeKey(s.key, s.octave).machine)}">キー ${randomKeyText(s)}</span>${randomRecText(s)}<span class="rnd-range">${rangeText(s)}</span></div>
       <div class="rnd-actions">
         <button type="button" class="btn" data-open="${esc(s.id)}">詳細を見る</button>
-        <button type="button" class="btn" data-sung="${esc(s.id)}">${icon('mic')}歌った！</button>
+        ${rndSungBtn(s)}
       </div>
     </div>`;
   } else {
     box.innerHTML = `<ol class="rnd-list">${picks.map((s, i) => `<li>
       <button type="button" class="rnd-row" data-open="${esc(s.id)}">${rndRowHTML(s, i)}</button>
-      ${randomRec(s)}
+      ${rndSungBtn(s, ' sm')}
     </li>`).join('')}</ol>`;
   }
   $('[data-role="sum"]', sheet.el).innerHTML = randomSummary();
@@ -1492,9 +1494,6 @@ async function onRandomClick(e) {
     openDetail(b.dataset.open);
   } else if (b.dataset.sung) {
     markSung(b.dataset.sung);
-  } else if (b.dataset.rec) {
-    setTotalKey(b.dataset.rec, +b.dataset.k);
-    paintRandom();
   } else {
     switch (b.dataset.act) {
       case 'close': r.sheet.close(); break;
