@@ -3663,12 +3663,20 @@ function openImportGuide() {
           </ol>
         </details>
         <details><summary>Apple Music</summary>
+          <p class="hint">やり方は2通りあります。スマホの Apple Music アプリからは書き出せないため、PC があれば方法1、スマホだけのときは方法2を使います。</p>
+          <h5 class="gd-way">方法1：PC の「ミュージック」「iTunes」で書き出す</h5>
           <ol>
             <li>PC の「ミュージック」（Mac）か「iTunes」（Windows）で、書き出したい再生リストを選ぶ</li>
             <li>メニューの「ファイル」→「ライブラリ」→「プレイリストを書き出す」を選び、形式を「テキストファイル」にして保存する</li>
             <li>保存したファイルを、このアプリの「ファイルを選ぶ」で選ぶ（いくつかまとめて選べます）</li>
           </ol>
-          <p class="hint">スマホのアプリだけでは書き出せません。PC がないときは、下の TuneMyMusic を使います。</p>
+          <h5 class="gd-way">方法2：TuneMyMusic で書き出す（スマホだけでもできる）</h5>
+          <ol>
+            <li>${ext('https://www.tunemymusic.com/', 'TuneMyMusic')}を開き、移行元に「Apple Music」を選んでログインする</li>
+            <li>書き出したい再生リストを選び、移行先に「ファイルにエクスポート」を選んで、CSV で保存する</li>
+            <li>保存した CSV を、このアプリの「ファイルを選ぶ」で選ぶ</li>
+          </ol>
+          <p class="hint">無料では 500 曲まで（TuneMyMusic の説明による）。</p>
         </details>
         <details><summary>YouTube Music</summary>
           <p class="hint">やり方は2通りあります。公開・限定公開の再生リストなら、リンクを貼るだけの方法1が簡単です。</p>
