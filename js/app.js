@@ -3668,21 +3668,22 @@ function openImportGuide() {
           </ol>
           <p class="hint">スマホのアプリだけでは書き出せません。PC がないときは、下の TuneMyMusic を使います。</p>
         </details>
-        <details><summary>YouTube Music（再生リストのリンク）</summary>
+        <details><summary>YouTube Music</summary>
+          <p class="hint">やり方は2通りあります。公開・限定公開の再生リストなら、リンクを貼るだけの方法1が簡単です。</p>
+          <h5 class="gd-way">方法1：再生リストのリンクを貼る</h5>
           <ol>
             <li>YouTube Music で再生リストを開き、「共有」→「リンクをコピー」を押す</li>
             <li>このアプリのテキスト欄に、コピーしたリンクを貼る（いくつ貼っても大丈夫です）</li>
           </ol>
           <p class="hint">読めるのは「公開」か「限定公開」の再生リストです。「非公開」のときは、再生リストの公開範囲を一時的に「限定公開」にしてください。「高く評価した曲」は読めません。</p>
-        </details>
-        <details><summary>YouTube Music（Google Takeout）</summary>
+          <h5 class="gd-way">方法2：Google Takeout で書き出す</h5>
           <ol>
             <li>${ext('https://takeout.google.com/', 'Google Takeout')}を開き、「選択をすべて解除」を押してから「YouTube と YouTube Music」にだけチェックを付ける</li>
             <li>「YouTube のすべてのデータが含まれます」を押し、「ミュージック ライブラリの曲」と「再生リスト」だけを選ぶ</li>
             <li>「次のステップ」→「エクスポートを作成」を押し、届いたメールのリンクから ZIP をダウンロードする（準備に数分〜数時間かかります）</li>
             <li>ZIP のまま、このアプリの「ファイルを選ぶ」で選ぶ</li>
           </ol>
-          <p class="hint">再生リストのリンクより手間はかかりますが、非公開の再生リストやライブラリの曲もまとめて読めます。</p>
+          <p class="hint">方法1より手間はかかりますが、非公開の再生リストやライブラリの曲もまとめて読めます。</p>
         </details>
         <details><summary>Amazon Music・KKBOX など</summary>
           <ol>

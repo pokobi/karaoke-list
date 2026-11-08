@@ -1356,6 +1356,9 @@ textarea.input { resize: vertical; min-height: 84px; }
 .ti-guide a { color: var(--accent); font-weight: 650; text-decoration: none; display: inline-flex; align-items: center; gap: 2px; }
 .ti-guide a .ic { width: 13px; height: 13px; }
 .ti-guide details .hint { margin-top: 6px; }
+.ti-guide .gd-way { margin: 14px 0 0; font-size: 13.5px; font-weight: 700; }
+.ti-guide .gd-way + ol { margin-top: 6px; }
+.ti-guide .gd-way ~ .gd-way { padding-top: 12px; border-top: 1px solid var(--line); }
 .ti-text { min-height: 220px; font-size: 15px; line-height: 1.6; }
 .ti-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; font-size: 13.5px; line-height: 1.5; color: var(--text-2); margin-bottom: 6px; }
 .ti-status .link-btn { flex: none; }
