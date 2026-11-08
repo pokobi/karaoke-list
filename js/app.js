@@ -3643,7 +3643,9 @@ function openTextImport() {
     paintFoot();
   });
   showInput();
-  setTimeout(() => $('[data-role="text"]', body)?.focus({ preventScroll: true }), 80);
+  // マウスで操作する端末（PC など）だけ、すぐ書けるようにテキスト欄に移る。スマホでは、キーボードで
+  // 下の「ファイルを選ぶ」などが隠れないよう、テキスト欄を押すまでキーボードを出さない
+  if (matchMedia('(pointer: fine)').matches) setTimeout(() => $('[data-role="text"]', body)?.focus({ preventScroll: true }), 80);
 }
 
 // 音楽サービスから曲の一覧を書き出す方法
