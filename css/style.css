@@ -1248,7 +1248,9 @@ textarea.input { resize: vertical; min-height: 84px; }
 .vm-title { margin: 0 0 6px; font-size: 16px; }
 .vm-lead { margin: 0 0 14px; font-size: 14px; color: var(--text-2); line-height: 1.6; }
 .vm-notes { margin: 0 0 12px; padding-left: 1.2em; font-size: 13px; color: var(--text-2); line-height: 1.7; }
-.vm-error { margin: 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); font-size: 13px; }
+.vm-error { margin: 0 0 8px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); font-size: 13px; line-height: 1.6; }
+.vm-wait { margin: 0 0 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.vm-error-d { display: block; margin-top: 4px; font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
 .vm-live { display: grid; justify-items: center; gap: 8px; padding: 18px 14px 16px; border-radius: 16px; background: var(--surface-2); }
 .vm-live-l { font-size: 12px; font-weight: 600; color: var(--text-3); }
 .vm-now { font-size: 40px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; min-height: 44px; }
