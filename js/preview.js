@@ -3,6 +3,7 @@
 // 音楽ファイルはこの端末の中（IndexedDB）にだけ保存し、ほかの端末には同期しない。
 import { esc, icon, toast, confirmDialog } from './ui.js';
 import { describeKey, machineKey, formatKey } from './notes.js';
+import { findLeadSilence } from './lead-silence.js';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
 const SKIP_SEC = 5; // 戻る・進むボタンで動かす秒数
@@ -43,13 +44,59 @@ async function run(mode, fn) {
   });
 }
 
+// ---- 音楽ファイルの頭の無音（調べた結果を、この端末に覚えておく） ----------------
+// 曲の ID ごとに { at: ファイルを保存した日時, sec: 再生を始める位置 }。ファイルを差し替えたら調べ直す
+
+const LEAD_KEY = 'karaoke-list:preview-lead:v1';
+
+function readLeads() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LEAD_KEY));
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLeads(all) {
+  try {
+    if (Object.keys(all).length) localStorage.setItem(LEAD_KEY, JSON.stringify(all));
+    else localStorage.removeItem(LEAD_KEY);
+  } catch { /* 覚えられなくても、次に再生するときに調べ直すだけ */ }
+}
+
+// 調べてあれば再生を始める位置（秒）、まだなら undefined
+function savedLead(id, rec) {
+  const v = readLeads()[id];
+  return v && v.at === rec.addedAt && Number.isFinite(v.sec) ? v.sec : undefined;
+}
+
+function saveLead(id, rec, sec) {
+  const all = readLeads();
+  all[id] = { at: rec.addedAt, sec };
+  writeLeads(all);
+}
+
+function forgetLead(id) {
+  const all = readLeads();
+  if (!(id in all)) return;
+  delete all[id];
+  writeLeads(all);
+}
+
 // 曲の ID ごとに { blob, name, type, size, addedAt } を保存する
 export const audioFiles = {
   get: (id) => run('readonly', (st) => st.get(id)),
   keys: () => run('readonly', (st) => st.getAllKeys()),
   put: (id, rec) => run('readwrite', (st) => st.put(rec, id)),
-  remove: (id) => run('readwrite', (st) => st.delete(id)),
-  clear: () => run('readwrite', (st) => st.clear()),
+  remove: (id) => {
+    forgetLead(id);
+    return run('readwrite', (st) => st.delete(id));
+  },
+  clear: () => {
+    writeLeads({});
+    return run('readwrite', (st) => st.clear());
+  },
   async summary() {
     const recs = (await run('readonly', (st) => st.getAll())) ?? [];
     return { count: recs.length, bytes: recs.reduce((sum, r) => sum + (r?.size ?? 0), 0) };
@@ -61,6 +108,11 @@ export function formatBytes(n) {
   if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+// 飛ばす無音の長さの表示（2.8秒、12秒）
+function formatSec(sec) {
+  return `${sec < 10 ? sec.toFixed(1) : Math.round(sec)}秒`;
 }
 
 export function formatTime(sec) {
@@ -204,6 +256,8 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     sig: '',
     file: undefined, // undefined：読み込み中／null：なし
     fileUrl: null,
+    lead: undefined, // 音楽ファイルの頭の無音のあと、再生を始める位置（秒）。undefined：まだ調べていない
+    leadJob: null, // 頭の無音を調べている最中の処理
     srcId: 'file',
     chosen: false,
     original: false,
@@ -226,6 +280,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
   audioFiles.get(id).then((rec) => {
     if (p.destroyed) return;
     p.file = rec?.blob ? rec : null;
+    if (p.file) p.lead = savedLead(id, p.file);
     if (p.file && !p.chosen) p.srcId = 'file';
     paint();
   }).catch(() => {
@@ -272,6 +327,23 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     return { url, key: `${src.id}:${url}` };
   }
 
+  // 音楽ファイルの頭の無音を調べて覚える（同じファイルを 2 回調べない）
+  function checkLead() {
+    const file = p.file;
+    p.leadJob ??= findLeadSilence(file.blob).catch(() => 0).then((sec) => {
+      if (p.file !== file) return;
+      p.lead = sec;
+      saveLead(id, file, sec);
+      paint();
+    });
+    return p.leadJob;
+  }
+
+  function resetLead() {
+    p.lead = undefined;
+    p.leadJob = null;
+  }
+
   async function play(opts = {}) {
     prepare();
     if (engine.owner && engine.owner !== api) engine.owner.stop();
@@ -287,13 +359,24 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       }
       await engine.ready;
       if (p.destroyed || !isOwner()) return;
+      // 音楽ファイルは、初めて再生するときに頭の無音を調べる
+      if (!src && p.lead === undefined) {
+        setStatus('loading', '頭の無音を調べています…');
+        await checkLead();
+        if (p.destroyed || !isOwner()) return;
+      }
       setStatus('loading', '読み込んでいます…');
       setShift(semitones());
       const a = engine.audio;
+      // 頭の無音は、読み込んですぐと、最後まで再生したあとにもう一度再生するときに飛ばす（手で頭に戻したときは飛ばさない）
+      const skipTo = !src && p.lead > 0 ? p.lead : 0;
       if (p.loaded !== target.key) {
         post({ type: 'reset' });
         a.src = target.url;
         p.loaded = target.key;
+        if (skipTo) a.currentTime = skipTo;
+      } else if (skipTo && a.ended) {
+        a.currentTime = skipTo;
       }
       await engine.ctx.resume();
       await a.play();
@@ -390,6 +473,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       if (p.fileUrl) URL.revokeObjectURL(p.fileUrl);
       p.fileUrl = null;
       p.file = rec;
+      resetLead();
       p.srcId = 'file';
       p.chosen = true;
       setStatus('idle');
@@ -411,6 +495,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     if (p.fileUrl) URL.revokeObjectURL(p.fileUrl);
     p.fileUrl = null;
     p.file = null;
+    resetLead();
     setStatus('idle');
   }
 
@@ -540,7 +625,8 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
             <button type="button" class="pv-link" data-pv="pick">変更</button>
             <button type="button" class="pv-link" data-pv="remove">外す</button>
           </span>
-        </div>`;
+        </div>
+        ${p.lead > 0 ? `<p class="pv-lead">頭の無音（${formatSec(p.lead)}）を飛ばします</p>` : ''}`;
     }
     let info = null;
     try {
@@ -622,7 +708,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     try {
       info = JSON.stringify(source()?.info?.(s) ?? null);
     } catch { /* 表示のときに扱う */ }
-    const fileSig = p.file === undefined ? 'loading' : p.file && [p.file.name, p.file.addedAt];
+    const fileSig = p.file === undefined ? 'loading' : p.file && [p.file.name, p.file.addedAt, p.lead];
     const sig = JSON.stringify([p.srcId, fileSig, p.status, p.message, p.original, isOwner(), s.key, s.octave, info]);
     if (sig !== p.sig) {
       p.sig = sig;
