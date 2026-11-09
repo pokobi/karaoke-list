@@ -4,6 +4,7 @@
 import { esc, icon, toast, confirmDialog } from './ui.js';
 import { describeKey, machineKey, formatKey } from './notes.js';
 import { findLeadSilence } from './lead-silence.js';
+import { artworkUrl } from './itunes.js';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
 const SKIP_SEC = 5; // 戻る・進むボタンで動かす秒数
@@ -123,7 +124,7 @@ export function formatTime(sec) {
 
 // ---- 再生のしくみ（1 つだけ作って使い回す） -------------------------------
 
-const engine = { ctx: null, audio: null, node: null, gain: null, ready: null, owner: null, unlocked: false };
+const engine = { ctx: null, audio: null, node: null, gain: null, ready: null, owner: null, unlocked: false, mediaSig: null };
 
 // Apple Music の公式バッジ（Apple のマーケティングツールが配っている画像）
 const APPLE_MUSIC_BADGE = 'https://toolbox.marketingtools.apple.com/api/v2/badges/listen-on-apple-music/badge/ja-jp?size=250x83';
@@ -169,6 +170,53 @@ function saveVolume() {
   } catch { /* 保存できなくても再生はできる */ }
 }
 
+// ---- 通知・ロック画面の表示（Media Session。ほかのアプリを開いているときなどに出る） -------
+
+const mediaSession = typeof navigator !== 'undefined' ? navigator.mediaSession : null;
+const APP_ICON = new URL('../icons/icon-512.png', import.meta.url).href;
+
+// 再生している曲の曲名・アーティスト・ジャケット画像を出す（null で消す）
+function showMediaInfo(song) {
+  if (!mediaSession || typeof window.MediaMetadata !== 'function') return;
+  const art = song?.artwork ? artworkUrl(song.artwork, 512) : null;
+  const sig = song ? JSON.stringify([song.title, song.artist, art]) : null;
+  if (sig === engine.mediaSig) return;
+  engine.mediaSig = sig;
+  try {
+    mediaSession.metadata = song
+      ? new window.MediaMetadata({
+        title: song.title || '',
+        artist: song.artist || '',
+        artwork: [art ? { src: art } : { src: APP_ICON, sizes: '512x512', type: 'image/png' }],
+      })
+      : null;
+    if (!song) mediaSession.setPositionState?.();
+  } catch { /* 対応していない */ }
+}
+
+// 通知のシークバーに、再生位置と曲の長さを伝える
+function showMediaPosition(a) {
+  if (!mediaSession?.setPositionState || !Number.isFinite(a.duration) || !(a.duration > 0)) return;
+  try {
+    mediaSession.setPositionState({ duration: a.duration, playbackRate: a.playbackRate || 1, position: Math.min(a.currentTime, a.duration) });
+  } catch { /* 対応していない */ }
+}
+
+// 通知のボタン（再生・一時停止・戻る・進む・再生位置）を、今再生している試聴欄の操作につなぐ
+function setupMediaActions() {
+  if (!mediaSession?.setActionHandler) return;
+  const on = (action, fn) => {
+    try {
+      mediaSession.setActionHandler(action, fn);
+    } catch { /* この操作には対応していない */ }
+  };
+  on('play', () => engine.owner?.play());
+  on('pause', () => engine.owner?.pause());
+  on('seekbackward', () => engine.owner?.skip(-SKIP_SEC));
+  on('seekforward', () => engine.owner?.skip(SKIP_SEC));
+  on('seekto', (d) => engine.owner?.seekTo(d.seekTime));
+}
+
 // 一瞬だけの無音（iPhone で、タップの中で 1 回再生しておくと、あとから再生できるようになる）
 function silentUrl() {
   const n = 800;
@@ -202,6 +250,7 @@ function prepare() {
     a.crossOrigin = 'anonymous';
     engine.audio = a;
     for (const type of MEDIA_EVENTS) a.addEventListener(type, (e) => engine.owner?.onMedia(e));
+    setupMediaActions();
     engine.ready = (async () => {
       await engine.ctx.audioWorklet.addModule(new URL('./pitch-worklet.js', import.meta.url));
       const node = new AudioWorkletNode(engine.ctx, 'pitch-shift', {
@@ -304,6 +353,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     engine.ctx.suspend().catch(() => {});
     engine.owner = null;
     p.loaded = null;
+    showMediaInfo(null);
   }
 
   function pause() {
@@ -348,6 +398,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     prepare();
     if (engine.owner && engine.owner !== api) engine.owner.stop();
     engine.owner = api;
+    showMediaInfo(getSong());
     const src = source();
     setStatus('loading', src ? '音源を探しています…' : '');
     try {
@@ -423,6 +474,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       default:
     }
     if (e.type === 'timeupdate' || e.type === 'durationchange' || e.type === 'loadedmetadata' || e.type === 'seeking') paintTime(a);
+    if (e.type === 'playing' || e.type === 'pause' || e.type === 'seeking' || e.type === 'durationchange') showMediaPosition(a);
   }
 
   function paintTime(a = engine.audio) {
@@ -566,6 +618,14 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     const a = engine.audio;
     if (!isOwner() || !p.loaded || !a || !Number.isFinite(a.duration)) return;
     a.currentTime = Math.min(Math.max(0, a.currentTime + sec), Math.max(0, a.duration - 0.05));
+    paintTime(a);
+  }
+
+  // 再生位置を sec 秒の所へ動かす（通知のシークバーから）
+  function seekTo(sec) {
+    const a = engine.audio;
+    if (!isOwner() || !p.loaded || !a || !Number.isFinite(a.duration) || !Number.isFinite(sec)) return;
+    a.currentTime = Math.min(Math.max(0, sec), Math.max(0, a.duration - 0.05));
     paintTime(a);
   }
 
@@ -714,7 +774,10 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       p.sig = sig;
       el.innerHTML = sectionHTML(s);
     }
-    if (isOwner()) setShift(semitones());
+    if (isOwner()) {
+      setShift(semitones());
+      showMediaInfo(s); // 再生中に曲名やジャケットを変えたとき
+    }
     paintTime();
   }
 
@@ -722,6 +785,11 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     paint,
     onMedia,
     stop,
+    // 通知のボタンから呼ぶ
+    play: () => play(),
+    pause,
+    skip,
+    seekTo,
     destroy() {
       if (p.destroyed) return;
       stop();
