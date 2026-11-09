@@ -8,7 +8,7 @@ import { trimReading } from '../itunes.js';
 import { $, $$, esc, icon, openSheet, confirmDialog, toast, pickNote } from '../ui.js';
 import { sanitizeHaptics, hapticMode } from '../haptics.js';
 import { RANDOM_FX } from '../random-fx.js';
-import { previewSupported, audioFiles, formatBytes } from '../preview.js';
+import { previewSupported, audioFiles, formatBytes, stopPreview } from '../preview.js';
 import { signIn, offerLocalMove } from '../app.js';
 import { DEFAULT_OCTAVE, devicePrefs, saveDevicePrefs, state, voice, rangeAuto, tagList, sleep } from './core.js';
 import { render, invalidateList, updateView } from './list.js';
@@ -237,7 +237,7 @@ async function onSettingsClick(e) {
     case 'audio-import': pickAudioFiles(); break;
     case 'pv-clear':
       if (await confirmDialog({ title: '試聴の音楽ファイルをすべて削除しますか？', message: 'この端末に保存したファイルを削除します。元のファイルは消えません。', ok: '削除する', danger: true })) {
-        state.detail?.preview?.stop();
+        stopPreview();
         await audioFiles.clear().catch(() => {});
         paintAudioFiles();
         toast('削除しました');

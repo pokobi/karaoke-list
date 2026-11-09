@@ -8,7 +8,7 @@ import { sanitizeAliases } from './text-import.js';
 import { $, esc, choiceDialog, toast } from './ui.js';
 import { createLocalStore } from './store-local.js';
 import { createStore } from './store.js';
-import { previewSupported, audioFiles } from './preview.js';
+import { previewSupported, audioFiles, refreshPreview } from './preview.js';
 import { MOVE_AFTER_LOGIN_KEY, state, sessionFlag } from './app/core.js';
 import { render, bindStatic } from './app/list.js';
 import { paintKeyMenu, paintDetail } from './app/detail.js';
@@ -16,6 +16,7 @@ import { paintRandom } from './app/random-sheet.js';
 import { paintSettings, paintArtists, applyDevicePrefs, applyAccountPrefs } from './app/settings.js';
 import { paintTagManager } from './app/tags.js';
 import { paintSelbar } from './app/select.js';
+import { initMiniPlayer } from './app/mini-player.js';
 
 // ---- 起動 -------------------------------------------------------------
 
@@ -26,6 +27,7 @@ async function boot() {
   applyDevicePrefs();
   registerServiceWorker();
   bindStatic();
+  initMiniPlayer();
   // ログインは任意。ログインしていなければ、この端末のブラウザだけに保存する
   const forceLocal = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('local');
   state.store = createStore({
@@ -102,6 +104,7 @@ function onData({ songs, profile }) {
   state.loaded = true;
   render();
   paintDetail();
+  refreshPreview();
   paintKeyMenu();
   paintSettings();
   paintArtists();

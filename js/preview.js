@@ -170,6 +170,40 @@ function saveVolume() {
   } catch { /* 保存できなくても再生はできる */ }
 }
 
+// ---- 今再生している試聴（詳細画面を閉じても再生を続け、画面の下のバーで操作する） ---------
+
+const nowListeners = new Set();
+
+// 今再生している試聴が変わったとき（始めた・止めた・状態・再生位置）に fn(nowPlaying()) を呼ぶ
+export function onNowPlaying(fn) {
+  nowListeners.add(fn);
+}
+
+// 今再生している試聴。{ id, song, playing, message, cur, dur, detached（詳細画面を閉じたあと） }。ないときは null
+export function nowPlaying() {
+  return engine.owner?.info() ?? null;
+}
+
+function notifyNow() {
+  const info = nowPlaying();
+  for (const fn of nowListeners) fn(info);
+}
+
+// 画面の下のバーのボタンから：'toggle'（再生・一時停止）| 'back' | 'fwd'（5 秒戻る・進む）| 'stop'
+export function controlNowPlaying(action) {
+  engine.owner?.control(action);
+}
+
+// 試聴を止める（音楽ファイルをすべて消すときなど）
+export function stopPreview() {
+  engine.owner?.stop();
+}
+
+// 曲のデータが変わったときに呼ぶ（キーの変更に合わせる・曲が消えたら止める）
+export function refreshPreview() {
+  engine.owner?.paint();
+}
+
 // ---- 通知・ロック画面の表示（Media Session。ほかのアプリを開いているときなどに出る） -------
 
 const mediaSession = typeof navigator !== 'undefined' ? navigator.mediaSession : null;
@@ -298,6 +332,9 @@ const setShift = (semis) => {
  * ctx：追加機能に渡す窓口（ctx.saveExt(patch) で曲の保存欄 song.ext に足す）
  */
 export function createPreview({ getSong, sources = [], ctx = {} }) {
+  // 詳細画面を閉じたあとも再生を続けている曲なら、その試聴欄をそのまま使う
+  const reuse = engine.owner;
+  if (reuse?.reattach(getSong()?.id)) return reuse;
   const song0 = getSong();
   const id = song0?.id;
   const p = {
@@ -316,6 +353,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     urls: {}, // 追加機能の音源の URL
     retried: false,
     dragging: false,
+    detached: false, // 詳細画面を閉じたあとも再生を続けている
     destroyed: false,
   };
   if (sources.length) p.srcId = sources[0].id;
@@ -341,6 +379,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     p.status = status;
     p.message = message;
     paint();
+    notifyNow();
   }
 
   function stop() {
@@ -354,6 +393,24 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     engine.owner = null;
     p.loaded = null;
     showMediaInfo(null);
+    if (p.detached) finish();
+    notifyNow();
+  }
+
+  // 試聴欄を使い終わる（詳細画面を閉じたとき、閉じたあとも続けていた再生を止めたとき）
+  function finish() {
+    p.destroyed = true;
+    p.detached = false;
+    if (p.fileUrl) URL.revokeObjectURL(p.fileUrl);
+    p.fileUrl = null;
+  }
+
+  function toggle() {
+    if (isOwner() && (p.status === 'playing' || p.status === 'loading')) pause();
+    else {
+      p.retried = false;
+      play();
+    }
   }
 
   function pause() {
@@ -475,6 +532,8 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     }
     if (e.type === 'timeupdate' || e.type === 'durationchange' || e.type === 'loadedmetadata' || e.type === 'seeking') paintTime(a);
     if (e.type === 'playing' || e.type === 'pause' || e.type === 'seeking' || e.type === 'durationchange') showMediaPosition(a);
+    // 画面の下のバーの再生位置
+    if (p.detached && (e.type === 'timeupdate' || e.type === 'durationchange' || e.type === 'seeking')) notifyNow();
   }
 
   function paintTime(a = engine.audio) {
@@ -581,11 +640,7 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     if (!b || p.destroyed) return;
     const act = b.dataset.pv;
     if (act === 'toggle') {
-      if (isOwner() && (p.status === 'playing' || p.status === 'loading')) pause();
-      else {
-        p.retried = false;
-        play();
-      }
+      toggle();
     } else if (act === 'back' || act === 'fwd') {
       skip(act === 'back' ? -SKIP_SEC : SKIP_SEC);
     } else if (act === 'src') {
@@ -753,9 +808,19 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
 
   // 詳細画面を描くたびに呼ぶ（el は詳細画面の試聴欄）
   function paint(el = p.el) {
-    if (p.destroyed || !el) return;
+    if (p.destroyed) return;
     const s = getSong();
-    if (!s) return;
+    if (!s) {
+      // 詳細画面を閉じたあとに曲が消えた（削除・ログアウトなど）ときは止める
+      if (p.detached) stop();
+      return;
+    }
+    if (isOwner()) {
+      setShift(semitones()); // 一覧などでキーを変えたとき
+      showMediaInfo(s); // 再生中に曲名やジャケットを変えたとき
+    }
+    if (p.detached) notifyNow();
+    if (!el) return;
     if (el !== p.el) {
       p.el = el;
       p.sig = '';
@@ -774,10 +839,6 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
       p.sig = sig;
       el.innerHTML = sectionHTML(s);
     }
-    if (isOwner()) {
-      setShift(semitones());
-      showMediaInfo(s); // 再生中に曲名やジャケットを変えたとき
-    }
     paintTime();
   }
 
@@ -790,12 +851,46 @@ export function createPreview({ getSong, sources = [], ctx = {} }) {
     pause,
     skip,
     seekTo,
+    // 画面の下のバーに出す内容（nowPlaying()）
+    info() {
+      const a = engine.audio;
+      const loaded = isOwner() && p.loaded && a;
+      return {
+        id,
+        song: getSong(),
+        playing: p.status === 'playing' || p.status === 'loading',
+        message: p.status === 'error' ? p.message : '',
+        cur: loaded ? a.currentTime : 0,
+        dur: loaded && Number.isFinite(a.duration) ? a.duration : 0,
+        detached: p.detached,
+      };
+    },
+    control(action) {
+      if (action === 'toggle') toggle();
+      else if (action === 'back' || action === 'fwd') skip(action === 'back' ? -SKIP_SEC : SKIP_SEC);
+      else if (action === 'stop') stop();
+    },
+    // 閉じたあとも再生を続けている曲の詳細画面を、もう一度開いたとき
+    reattach(songId) {
+      if (!p.detached || songId !== id) return false;
+      p.detached = false;
+      p.sig = '';
+      notifyNow();
+      return true;
+    },
+    // 詳細画面を閉じたとき
     destroy() {
-      if (p.destroyed) return;
+      if (p.destroyed || p.detached) return;
+      // 再生中・一時停止中は、画面から外すだけで再生を続ける（画面の下のバーで操作する）
+      if (isOwner() && (p.loaded || p.status === 'loading') && getSong()) {
+        p.detached = true;
+        p.el = null;
+        p.dragging = false;
+        notifyNow();
+        return;
+      }
       stop();
-      p.destroyed = true;
-      if (p.fileUrl) URL.revokeObjectURL(p.fileUrl);
-      p.fileUrl = null;
+      finish();
     },
   };
   return api;

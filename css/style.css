@@ -1530,6 +1530,53 @@ textarea.input { resize: vertical; min-height: 84px; }
   .selbar { left: 300px; }
 }
 
+/* ---- 画面の下のバー（詳細画面を閉じても続けている試聴） ---------------------- */
+.mini {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  padding: 0 max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, .08);
+}
+.mini-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 2px;
+  background: linear-gradient(to right, var(--accent) var(--mini-p, 0%), transparent var(--mini-p, 0%));
+}
+.mini-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 2px; min-height: 64px; }
+.mini-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 8px 4px; text-align: left; border-radius: 12px; }
+.mini-art { width: 44px; height: 44px; }
+.mini-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mini-title { font-size: 14.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-sub { font-size: 12.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-sub.err { color: var(--danger); }
+.mini-ctl { display: flex; align-items: center; flex: none; }
+.mini-btn { width: 40px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--text); }
+.mini-btn .ic { width: 22px; height: 22px; }
+.mini-play .ic { width: 26px; height: 26px; }
+.mini-btn:disabled { opacity: .35; }
+@media (hover: hover) {
+  .mini-main:hover, .mini-btn:not(:disabled):hover { background: var(--surface-2); }
+}
+body.has-mini .fab { bottom: calc(82px + env(safe-area-inset-bottom)); }
+body.has-mini .main { padding-bottom: calc(170px + env(safe-area-inset-bottom)); }
+body.has-mini .toast { bottom: calc(154px + env(safe-area-inset-bottom)); }
+.app.selecting .mini { display: none; }
+@media (min-width: 1024px) {
+  .mini { left: 300px; }
+  .mini-inner { max-width: 860px; }
+  body.has-mini .fab { bottom: 92px; }
+}
+
 /* ---- タグ ------------------------------------------------------------- */
 .tag-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .tag-row { display: flex; align-items: center; gap: 2px; min-height: 50px; border-bottom: 1px solid var(--line); }

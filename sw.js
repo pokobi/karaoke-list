@@ -2,7 +2,7 @@
 // アプリのファイルは通信を優先し、時間がかかるときやオフラインのときはキャッシュを使う。
 // Firebase SDK はバージョン固定の URL なので、キャッシュを優先する。
 
-const CACHE = 'karaoke-list-v65';
+const CACHE = 'karaoke-list-v66';
 // 一時的に range-note という名前だったときのキャッシュも片付ける
 const OLD_PREFIXES = ['karaoke-list-', 'range-note-'];
 const SCOPE = new URL('./', self.location).pathname;
@@ -28,6 +28,7 @@ const SHELL = [
   './js/app/add-history.js',
   './js/app/csv-file.js',
   './js/app/measure.js',
+  './js/app/mini-player.js',
   './js/ui.js',
   './js/notes.js',
   './js/model.js',
